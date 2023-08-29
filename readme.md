@@ -1,10 +1,10 @@
-# Slaash
+# API SLAASH DASHBOARD
+
+The GoLang repository for Slaash REST API
 
 
-This is the repo to store the the front end and backend for slaash.it home and login page
 
-
-- Go version 1.20
-- chi router
-- SCS session management
-- Uses noSurf
+- Built in Go version 1.20
+- Uses the [chi router](github.com/go-chi/chi)
+- Uses [alex edwards scs session management](github.com/alexedwards/scs)
+- Uses [nosurf](github.com/justinas/nosurf)
