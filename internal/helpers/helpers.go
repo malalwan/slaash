@@ -10,14 +10,6 @@ import (
 	"github.com/malalwan/slaash/internal/config"
 )
 
-// MyApp model
-type MyApp struct {
-	ID          string
-	Secret      string
-	RedirectURL string
-	Scopes      []string
-}
-
 type Store struct {
 	Name           string
 	ApiKey         string

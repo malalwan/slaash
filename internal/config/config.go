@@ -15,5 +15,6 @@ type AppConfig struct {
 	ErrorLog      *log.Logger
 	InProduction  bool
 	Session       *scs.SessionManager
-	MyApp         helpers.MyApp
+	MyAppCreds    []string
+	MyScopes      []string
 }

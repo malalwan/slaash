@@ -8,6 +8,14 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+// MyApp model
+type MyApp struct {
+	ID          string
+	Secret      string
+	RedirectURL string
+	Scopes      []string
+}
+
 // User is the user model
 type User struct {
 	ID          int
