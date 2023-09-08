@@ -8,9 +8,7 @@ import (
 	"github.com/go-chi/chi"
 	"github.com/malalwan/slaash/internal/config"
 	"github.com/malalwan/slaash/internal/driver"
-	"github.com/malalwan/slaash/internal/helpers"
 	"github.com/malalwan/slaash/internal/models"
-	"github.com/malalwan/slaash/internal/render"
 	"github.com/malalwan/slaash/internal/repository"
 	"github.com/malalwan/slaash/internal/repository/dbrepo"
 	"golang.org/x/oauth2"
@@ -23,7 +21,7 @@ var Repo *Repository
 type Repository struct {
 	App  *config.AppConfig
 	DB   repository.DatabaseRepo
-	User helpers.Store
+	User models.Store
 }
 
 // NewRepo creates a new repository
@@ -53,10 +51,10 @@ func (m *Repository) ShopifyLogin(w http.ResponseWriter, r *http.Request) {
 	la := chi.URLParam(r, "loginAction")
 	host := r.Host
 	oauthConf := &oauth2.Config{
-		ClientID:     m.App.MyApp.ID,
-		ClientSecret: m.App.MyApp.Secret,
-		RedirectURL:  m.App.MyApp.RedirectURL,
-		Scopes:       m.App.MyApp.Scopes,
+		ClientID:     m.App.MyAppCreds[0],
+		ClientSecret: m.App.MyAppCreds[1],
+		RedirectURL:  m.App.RedirectURL,
+		Scopes:       m.App.MyScopes,
 		Endpoint: oauth2.Endpoint{
 			AuthURL:  fmt.Sprintf("https://%s/admin/oauth/authorize", host),
 			TokenURL: fmt.Sprintf("https://%s/admin/oauth/access_token", host),
@@ -90,11 +88,11 @@ Output: Ack on DB Set and Email Queued
 func (m *Repository) SendNoDeal(w http.ResponseWriter, r *http.Request) {
 	user := m.App.Session.Get(r.Context(), "user").(models.User)
 	store := user.Store
-	campaign, err := models.GetActiveCampaign(store)
+	campaigns, err := m.DB.GetActiveCampaign(store)
 	if err != nil {
 		log.Fatal(err)
 	}
-	listOfProducts, err := models.GetCampaignProducts(campaign)
+	listOfProducts, err := m.DB.GetCampaignProducts(campaigns[0])
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -110,32 +108,34 @@ func (m *Repository) SendNoDeal(w http.ResponseWriter, r *http.Request) {
 func (m *Repository) TakeCampaignAction(w http.ResponseWriter, r *http.Request) {
 	user := m.App.Session.Get(r.Context(), "user").(models.User)
 	store := user.Store
+	var c models.Campaign
+	c.Store = store
 	action := chi.URLParam(r, "action")
 
 	switch action {
 	case "create":
-		campaign, err := models.CreateCampaign(store)
-		listOfProducts, err := models.CreateCampaignProducts(campaign)
+		err := m.DB.CreateCampaign(c)
+		_, _ = m.DB.CreateCampaignProducts(c)
 		// send list of products for the form
 		if err != nil {
 			log.Fatal(err)
 		}
 	case "update":
 		// Get campaignID from the request
-		campaign, err := models.GetCampaignByID(r.Response.Body) // TBC
-		listOfProducts, err := models.UpdateCampaignProducts(campaign)
+		campaign, _ := m.DB.GetCampaignByID(c.CampaignID) // TBC
+		_, err := m.DB.UpdateCampaignProducts(campaign)
 		if err != nil {
 			log.Fatal(err)
 		}
 	case "view":
-		campagin, err := models.GetCampaignByID(r.Response.Body)
-		listOfProducts, err := models.GetCampaignProducts(campaign)
+		campagin, err := m.DB.GetCampaignByID(c.CampaignID)
+		_, _ = m.DB.GetCampaignProducts(campagin)
 		if err != nil {
 			log.Fatal(err)
 		}
 		// send the list as a response
 	case "list":
-		campaigns, err := models.ListAllCampaigns()
+		_, _ = m.DB.ListAllCampaigns()
 		// send back the fucking list
 	}
 }
@@ -143,7 +143,7 @@ func (m *Repository) TakeCampaignAction(w http.ResponseWriter, r *http.Request) 
 // Majors renders the room page
 func (m *Repository) SendSeriesData(w http.ResponseWriter, r *http.Request) {
 	user := m.App.Session.Get(r.Context(), "user").(models.User)
-	store := user.Store
+	_ = user.Store
 	column := chi.URLParam(r, "colId")
 	time := chi.URLParam(r, "tStub")
 	// startTime := (TODO)
@@ -168,5 +168,10 @@ func (m *Repository) SendSeriesData(w http.ResponseWriter, r *http.Request) {
 
 // Availability renders the search availability page
 func (m *Repository) ShowCampaignStats(w http.ResponseWriter, r *http.Request) {
-	render.Template(w, r, "search-availability.page.tmpl", &models.TemplateData{})
+
 }
+
+// if login window and func for login post method is handled
+// do this first
+// m.app.Session.RenewToken(r.Context())
+// then put the usr_id or smthing in the session

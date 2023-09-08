@@ -4,16 +4,16 @@ import (
 	"time"
 
 	goshopify "github.com/bold-commerce/go-shopify"
-	"github.com/malalwan/slaash/internal/helpers"
 	"github.com/shopspring/decimal"
 )
 
-// MyApp model
-type MyApp struct {
-	ID          string
-	Secret      string
-	RedirectURL string
-	Scopes      []string
+type Store struct {
+	ID           int
+	Name         string
+	ApiToken     string
+	RefreshToken string
+	Misc         string
+	URL          string
 }
 
 // User is the user model
@@ -26,16 +26,16 @@ type User struct {
 	AccessLevel int
 	CreatedAt   *time.Time
 	UpdatedAt   *time.Time
-	Store       helpers.Store
+	Store       Store
 }
 
 type Campaign struct {
-	CampaignID   int64         // autogen unique campaignID (PK)
-	Store        helpers.Store // store for which the campaign is set
-	Timestamp    *time.Time    // activation time of campaign (nothing if not)
-	Discount     int           // overall discount in % of total price
-	ActiveStatus int           // 1 : active, 2 : assigned, 3 : fulfilled(mail sent)
-	Misc         string        // extra details if needed
+	CampaignID   int64      // autogen unique campaignID (PK)
+	Store        Store      // store for which the campaign is set
+	Timestamp    *time.Time // activation time of campaign (nothing if not)
+	Discount     int        // overall discount in % of total price
+	ActiveStatus int        // 1 : active, 2 : assigned, 3 : fulfilled(mail sent)
+	Misc         string     // extra details if needed
 }
 
 // Structure that stores price
@@ -69,10 +69,8 @@ type CampaignProduct struct {
 	CampaignID   int64             // FK to Campaign
 	ProductID    int64             // Product ID of the given product (to fetch from shopify)
 	Title        string            // product title for local storage
-	ProductType  string            // Review if needed
-	Status       string            // Review if needed
 	Images       []goshopify.Image // product image list for seamless dahsboard display (linked, not stored)
-	Store        helpers.Store     // easy access to the store for initiating connection to shopify
+	Store        Store             // easy access to the store for initiating connection to shopify
 	Deals        int               // stores the number of deals on a specific product (init as 1)
 	Sold         int               // number of campaign products sold (get from order data)
 	DealDiscount int               // If a deal was given on the product or not
@@ -84,46 +82,13 @@ type CampaignProduct struct {
 // Structure to store email IDs when end
 // user subscribes to deal list
 type Buyer struct {
-	AnonymousID int64         // PK
-	Email       string        // Also Unique
-	Store       helpers.Store // Store details on which the deal list was clicked
-	ProductId   int64         // Product ID of the product added to the deal list
-	Timestamp   *time.Time    // Subscription timestamp
-	GotDeal     bool          // Initialized as false, unless campaign fulfilled
-	ClickedDeal bool          // Initialized as false, set when Buyer clicks on checkout link
-	CPID        int64         // FK to CampaignProduct DB where deals increment will happen
-	Misc        string        // Extra info about the buyer
-}
-
-func GetActiveCampaign(helpers.Store) (*Campaign, error) {
-	// pull active campaign(s) for a store from DB
-	// return the campaign
-	return &Campaign{
-		CampaignID: 0,
-	}, nil
-}
-
-func GetCampaignProducts(*Campaign) ([]CampaignProduct, error) {
-	// pull all campaign products with the given campaing ID from DB
-	return []CampaignProduct{CampaignProduct{}}, nil
-}
-
-func CreateCampaign(helpers.Store) (*Campaign, error) {
-	return &Campaign{}, nil
-}
-
-func CreateCampaignProducts(*Campaign) ([]CampaignProduct, error) {
-	return []CampaignProduct{}, nil
-}
-
-func GetCampaignByID(int64) (*Campaign, error) {
-	return &Campaign{}, nil
-}
-
-func UpdateCampaignProducts(*Campaign) ([]CampaignProduct, error) {
-	return []CampaignProduct{}, nil
-}
-
-func ListAllCampaigns() ([]Campaign, error) {
-	return []Campaign{}, nil
+	AnonymousID int64      // PK
+	Email       string     // Also Unique
+	Store       Store      // Store details on which the deal list was clicked
+	ProductId   int64      // Product ID of the product added to the deal list
+	Timestamp   *time.Time // Subscription timestamp
+	GotDeal     bool       // Initialized as false, unless campaign fulfilled
+	ClickedDeal bool       // Initialized as false, set when Buyer clicks on checkout link
+	CPID        int64      // FK to CampaignProduct DB where deals increment will happen
+	Misc        string     // Extra info about the buyer
 }
