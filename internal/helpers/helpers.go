@@ -28,5 +28,6 @@ func ServerError(w http.ResponseWriter, err error) {
 
 func IsAuthenticated(r *http.Request) bool {
 	exists := app.Session.Exists(r.Context(), "user")
+	// added via : session.Put(r.Context(), "user", user) //user of type User struct that we registered
 	return exists
 }

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/gob"
 	"fmt"
 	"log"
 	"net/http"
@@ -48,7 +47,7 @@ func run() (*driver.DB, error) {
 	/* what am I going to put in the session?
 	will be used to fetch store context for the dashboard
 	and display profile (editable?) */
-	gob.Register(models.User{})
+	// gob.Register(models.User{})
 
 	/* to pick different DBs for test and prod */
 	app.InProduction = false
@@ -79,16 +78,16 @@ func run() (*driver.DB, error) {
 	log.Println("Connecting to database...")
 	var dbname string
 	if app.InProduction {
-		dbname = "defaultdb"
-	} else {
 		dbname = "dashboard"
+	} else {
+		dbname = "defaultdb"
 	}
 	connString := fmt.Sprintf("host=pg-slaash-slaash-01.aivencloud.com port=19236 dbname=%s user=avnadmin password=AVNS__o7qCttikmfMMABdM7J", dbname)
 	db, err := driver.ConnectSQL(connString)
 	if err != nil {
 		log.Fatal("Cannot connect to database! Dying...")
 	}
-
+	log.Println(connString)
 	log.Println("Connected to database!")
 
 	/* Repo is a wrapper over appconfig. It stores DB info

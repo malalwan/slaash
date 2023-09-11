@@ -24,31 +24,32 @@ type User struct {
 	Email       string
 	Password    string
 	AccessLevel int
-	CreatedAt   *time.Time
-	UpdatedAt   *time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 	Store       Store
 }
 
 type Campaign struct {
-	CampaignID   int64      // autogen unique campaignID (PK)
-	Store        Store      // store for which the campaign is set
-	Timestamp    *time.Time // activation time of campaign (nothing if not)
-	Discount     int        // overall discount in % of total price
-	ActiveStatus int        // 1 : active, 2 : assigned, 3 : fulfilled(mail sent)
-	Misc         string     // extra details if needed
+	CampaignID   int64     // autogen unique campaignID (PK)
+	Store        Store     // store for which the campaign is set
+	Timestamp    time.Time // activation time of campaign (nothing if not)
+	Discount     int       // overall discount in % of total price
+	ActiveStatus int       // 1 : active, 2 : assigned, 3 : fulfilled(mail sent)
+	Misc         string    // extra details if needed
 }
 
 // Structure that stores price
 // rules created by slaash
 type PriceRule struct {
+	ID                string
 	Title             string
 	TargetType        string
 	TargetSelection   string
 	ValueType         string
-	Value             *decimal.Decimal
+	Value             decimal.Decimal
 	CustomerSelection string
 	AllocationMethod  string
-	StartsAt          *time.Time
+	StartsAt          time.Time
 }
 
 // Structure that stores discount
@@ -58,8 +59,8 @@ type DiscountCode struct {
 	PriceRuleID int64
 	Code        string
 	UsageCount  int
-	CreatedAt   *time.Time
-	UpdatedAt   *time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // Details of the Products added
@@ -77,18 +78,20 @@ type CampaignProduct struct {
 	EmailSentTo  []string          // List of emails who recieved the deal (till date)
 	Misc         string            // Extra info whenever needed
 	PriceRuleID  int64             // Price rule associated with the discount
+	Timestamp    time.Time
+	Price        int
 }
 
 // Structure to store email IDs when end
 // user subscribes to deal list
 type Buyer struct {
-	AnonymousID int64      // PK
-	Email       string     // Also Unique
-	Store       Store      // Store details on which the deal list was clicked
-	ProductId   int64      // Product ID of the product added to the deal list
-	Timestamp   *time.Time // Subscription timestamp
-	GotDeal     bool       // Initialized as false, unless campaign fulfilled
-	ClickedDeal bool       // Initialized as false, set when Buyer clicks on checkout link
-	CPID        int64      // FK to CampaignProduct DB where deals increment will happen
-	Misc        string     // Extra info about the buyer
+	AnonymousID int64     // PK
+	Email       string    // Also Unique
+	Store       Store     // Store details on which the deal list was clicked
+	ProductId   int64     // Product ID of the product added to the deal list
+	Timestamp   time.Time // Subscription timestamp
+	GotDeal     bool      // Initialized as false, unless campaign fulfilled
+	ClickedDeal bool      // Initialized as false, set when Buyer clicks on checkout link
+	CPID        int64     // FK to CampaignProduct DB where deals increment will happen
+	Misc        string    // Extra info about the buyer
 }

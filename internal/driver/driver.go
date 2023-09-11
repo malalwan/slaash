@@ -2,6 +2,8 @@ package driver
 
 import (
 	"database/sql"
+	"fmt"
+	"log"
 	"time"
 
 	_ "github.com/jackc/pgconn"
@@ -46,6 +48,14 @@ func testDB(d *sql.DB) error {
 	if err != nil {
 		return err
 	}
+	var version string
+	err = d.QueryRow("SELECT version()").Scan(&version)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Print the PostgreSQL version
+	fmt.Printf("PostgreSQL Version: %s\n", version)
 	return nil
 }
 

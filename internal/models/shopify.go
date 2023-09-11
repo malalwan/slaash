@@ -15,6 +15,15 @@ func NewShopifyFunctions(a *config.AppConfig) {
 	app = a
 }
 
+func (store Store) InitClient() *goshopify.Client {
+	app := goshopify.App{
+		ApiKey:    app.MyAppCreds[0],
+		ApiSecret: app.MyAppCreds[1],
+	}
+	client := goshopify.NewClient(app, store.Name, store.ApiToken)
+	return client
+}
+
 func (store Store) SendUItoTheme(js string) error {
 	client := store.InitClient()
 	themes, err := client.Theme.List(client.Theme)
@@ -211,15 +220,6 @@ func (store Store) GetProductById(PId int64) (*goshopify.Product, error) {
 	product, err := goshopify.ProductService.Get(client.Product, PId, 0)
 
 	return product, err
-}
-
-func (store Store) InitClient() *goshopify.Client {
-	app := goshopify.App{
-		ApiKey:    app.MyAppCreds[0],
-		ApiSecret: app.MyAppCreds[1],
-	}
-	client := goshopify.NewClient(app, store.Name, store.ApiToken)
-	return client
 }
 
 func (store Store) GetAllProducts() ([]goshopify.Product, error) {
