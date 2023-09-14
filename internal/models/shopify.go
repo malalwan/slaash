@@ -225,8 +225,11 @@ func (store Store) GetProductById(PId int64) (*goshopify.Product, error) {
 func (store Store) GetAllProducts() ([]goshopify.Product, error) {
 
 	client := store.InitClient()
+	listOptions := goshopify.ProductListOptions{
+		PublishedStatus: "published",
+	}
 
-	products, err := goshopify.ProductService.List(client.Product, 0)
+	products, err := goshopify.ProductService.List(client.Product, listOptions)
 
 	return products, err
 

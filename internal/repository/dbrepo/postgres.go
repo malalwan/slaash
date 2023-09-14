@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/malalwan/slaash/internal/models"
@@ -28,7 +27,7 @@ Referenced by:
 
 */
 
-func (m *postgresDBRepo) GetActiveCampaign(s models.Store) ([]models.Campaign, error) {
+func (m *postgresDBRepo) GetActiveCampaign(s models.Store) (models.Campaign, error) {
 	// pull active campaign(s) for a store from DB
 	/* SELECT *
 	FROM campaign
@@ -42,7 +41,7 @@ func (m *postgresDBRepo) GetActiveCampaign(s models.Store) ([]models.Campaign, e
 
 	rows, err := m.DB.QueryContext(ctx, stmt, s.ID)
 	if err != nil {
-		return []models.Campaign{}, err
+		return models.Campaign{}, err
 	}
 	defer rows.Close()
 
@@ -53,15 +52,15 @@ func (m *postgresDBRepo) GetActiveCampaign(s models.Store) ([]models.Campaign, e
 		err := rows.Scan(&c.CampaignID, &c.Store.ID, &c.Timestamp,
 			&c.Discount, &c.ActiveStatus, &c.Misc)
 		if err != nil {
-			return []models.Campaign{}, err
+			return models.Campaign{}, err
 		}
 		campaigns = append(campaigns, c)
 	}
 	if err := rows.Err(); err != nil {
-		return []models.Campaign{}, err
+		return models.Campaign{}, err
 	}
 
-	return campaigns, nil
+	return campaigns[0], nil
 }
 
 func (m *postgresDBRepo) CreateCampaign(c models.Campaign) error {
@@ -83,41 +82,70 @@ func (m *postgresDBRepo) CreateCampaign(c models.Campaign) error {
 	return nil
 }
 
-func (m *postgresDBRepo) SelectFromCampaignByStore(storeid int, ts time.Time, s string, f string, w string) (map[string]int, error) {
+func (m *postgresDBRepo) SelectFromCampaignById(id int64, ts time.Time, s string, f string, w string) (map[string]int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	stmt := fmt.Sprintf("select %s from %s where %s", s, f, w)
 	j := make(map[string]int)
-	rows, err := m.DB.QueryContext(ctx, stmt, storeid, ts)
+	rows, err := m.DB.QueryContext(ctx, stmt, id, ts)
 	if err != nil {
 		return j, err
 	}
 	defer rows.Close()
-	contains := strings.Contains(s, "SUM") || strings.Contains(s, "COUNT")
 	for rows.Next() {
-		var c sql.NullInt64
-		if contains {
-			err = rows.Scan(&c)
-			if !c.Valid {
-				j["count"] = 0
-				return j, nil
-			}
-			if err != nil {
-				return j, err
-			}
-			j["count"] = int(c.Int64)
-		} else {
-			var t time.Time
-			err = rows.Scan(&c, &t)
-			if err != nil {
-				return j, err
-			}
-			j[t.Format("2006-01-02 15:04:05")] = int(c.Int64)
+		var g, p, u, d sql.NullInt64
+		err = rows.Scan(&g, &p, &u, &d)
+		if !g.Valid {
+			j["gmv"] = 0
+			return j, nil
 		}
+		if err != nil {
+			return j, err
+		}
+		j["gmv"] = int(g.Int64)
+		j["products"] = int(p.Int64)
+		j["users"] = int(u.Int64)
+		j["discounts"] = int(d.Int64)
 	}
 
 	return j, nil
+}
+
+func (m *postgresDBRepo) GetGroupSeriesData(id int64, ts time.Time) ([]map[string]int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	gmap := make(map[string]int)
+	pmap := make(map[string]int)
+	umap := make(map[string]int)
+	dmap := make(map[string]int)
+	stmt := `SELECT DATE_TRUNC('hour', timestamp) AS interval,
+	COALESCE(SUM(price),0), COALESCE(COUNT(*), 0) ,
+	COALESCE(SUM(deals),0), COALESCE(SUM(dealdiscount*price/100),0)
+	FROM   campaign_product
+	WHERE  storeid = $1
+	AND	  timestamp >= $2
+	GROUP BY interval
+	ORDER BY interval;`
+	rows, err := m.DB.QueryContext(ctx, stmt, id, ts)
+	if err != nil {
+		return []map[string]int{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var t time.Time
+		var g, p, u, d sql.NullInt64
+		err = rows.Scan(&t, &g, &p, &u, &d)
+		if err != nil {
+			return []map[string]int{}, err
+		}
+		gmap[t.Format("2006-01-02 15:04:05")] = int(g.Int64)
+		pmap[t.Format("2006-01-02 15:04:05")] = int(p.Int64)
+		umap[t.Format("2006-01-02 15:04:05")] = int(u.Int64)
+		dmap[t.Format("2006-01-02 15:04:05")] = int(d.Int64)
+	}
+
+	return []map[string]int{gmap, pmap, umap, dmap}, nil
 }
 
 func (m *postgresDBRepo) GetCampaignByID(id int64) (models.Campaign, error) {
@@ -382,6 +410,36 @@ func (m *postgresDBRepo) UpdateBuyer(b models.Buyer) (models.Buyer, error) {
 	return models.Buyer{}, nil
 }
 
+func (m *postgresDBRepo) GetAggregateOtfByDuration(ts time.Time, typ string, id int) (map[string]int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	otfMap := map[string]int{}
+
+	stmt := `SELECT DATE_TRUNC('hour', timestamp) AS interval,
+	COALESCE(COUNT(*), 0)
+	FROM   buyer
+	WHERE  storeid = $1
+	AND	  timestamp >= $2
+	GROUP BY interval
+	ORDER BY interval;`
+	rows, err := m.DB.QueryContext(ctx, stmt, id, ts)
+	if err != nil {
+		return otfMap, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var t time.Time
+		var otf sql.NullInt64
+		err = rows.Scan(&t, &otf)
+		if err != nil {
+			return otfMap, err
+		}
+		otfMap[t.Format("2006-01-02 15:04:05")] = int(otf.Int64)
+	}
+
+	return otfMap, nil
+}
+
 /*                                Table "public.store"
     Column    |  Type   | Collation | Nullable |              Default
 --------------+---------+-----------+----------+-----------------------------------
@@ -530,4 +588,37 @@ func (m *postgresDBRepo) GetCampaignProducts(c int64) ([]models.CampaignProduct,
 
 func (m *postgresDBRepo) UpdateCampaignProducts(c models.Campaign, dict map[string]interface{}) ([]models.CampaignProduct, error) {
 	return []models.CampaignProduct{}, nil
+}
+
+func (m *postgresDBRepo) GetTopProductsByStore(s int) ([]models.CampaignProduct, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	/* SELECT * FROM products
+	ORDER BY price ASC
+	LIMIT 5;
+	*/
+	products := []models.CampaignProduct{}
+	stmt := `select productid, deals, dealdiscount, price 
+	from campaign_product where storeid = $1 order by deals desc limit 5`
+	rows, err := m.DB.QueryContext(ctx, stmt, s)
+	if err != nil {
+		return products, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var pid, d, dd, p sql.NullInt64
+
+		err = rows.Scan(&pid, &d, &dd, &p)
+		if !pid.Valid || err != nil {
+			return products, err
+		}
+		var c models.CampaignProduct
+		c.ProductID = pid.Int64
+		c.Deals = int(d.Int64)
+		c.DealDiscount = int(dd.Int64)
+		c.Price = int(p.Int64)
+		products = append(products, c)
+	}
+
+	return products, nil
 }

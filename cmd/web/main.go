@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/gob"
 	"fmt"
 	"log"
 	"net/http"
@@ -47,13 +48,19 @@ func run() (*driver.DB, error) {
 	/* what am I going to put in the session?
 	will be used to fetch store context for the dashboard
 	and display profile (editable?) */
-	// gob.Register(models.User{})
+	gob.Register(models.User{})
 
-	/* to pick different DBs for test and prod */
+	/* to pick different DBs for test and prod and secure cookies */
 	app.InProduction = false
-	app.MyAppCreds = []string{"7f4b95c01d4764f01cb658adfad31108", "54bb5ac2cbf15a6d6bdb8bdeafec00f6"}
-	app.MyScopes = []string{"dd", "bb"}
-	app.RedirectURL = "dashboard.slaash.it"
+	if app.InProduction {
+		app.MyAppCreds = []string{"7f4b95c01d4764f01cb658adfad31108", "54bb5ac2cbf15a6d6bdb8bdeafec00f6"}
+		app.MyScopes = []string{"dd", "bb"} // to be edited
+		app.RedirectURL = "dashboard.slaash.it"
+	} else {
+		app.MyAppCreds = []string{"5e5ce46a1dfdf20f90f07016293f3838", "045f0b1fc37793af68f5bce04c9e2b63"}
+		app.MyScopes = []string{"dd", "bb"}
+		app.RedirectURL = "dashboard.slaash.it"
+	}
 
 	/* initialize my loggers
 	Will be needed to show info and error logs across the code */

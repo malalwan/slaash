@@ -3,9 +3,9 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/go-chi/chi"
@@ -38,6 +38,15 @@ func NewRepo(a *config.AppConfig, db *driver.DB) *Repository {
 // NewHandlers sets the repository for the handlers
 func NewHandlers(m *Repository) {
 	Repo = m
+}
+
+func (m *Repository) TestSession(w http.ResponseWriter, r *http.Request) {
+	user := m.App.Session.Get(r.Context(), "user").(models.User)
+	store := user.Store
+	fmt.Printf("user.FirstName: %v\n", user.FirstName)
+	fmt.Printf("user.LastName: %v\n", user.LastName)
+	fmt.Printf("store.ApiToken: %v\n", store.ApiToken)
+	fmt.Printf("store.Name: %v\n", store.Name)
 }
 
 /*
@@ -91,11 +100,11 @@ Output: Ack on DB Set and Email Queued
 func (m *Repository) SendNoDeal(w http.ResponseWriter, r *http.Request) {
 	user := m.App.Session.Get(r.Context(), "user").(models.User)
 	store := user.Store
-	campaigns, err := m.DB.GetActiveCampaign(store)
+	campaign, err := m.DB.GetActiveCampaign(store)
 	if err != nil {
 		log.Fatal(err)
 	}
-	listOfProducts, err := m.DB.GetCampaignProducts(campaigns[0].CampaignID)
+	listOfProducts, err := m.DB.GetCampaignProducts(campaign.CampaignID)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -107,245 +116,226 @@ func (m *Repository) SendNoDeal(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// TakeCampaignAction will CRUD campaigns for a store and display them
-func (m *Repository) TakeCampaignAction(w http.ResponseWriter, r *http.Request) {
-	/* create a campaign, add that id to all store products with unassigned campaignID with default discounts
-	once that is done, return the list of products with the new campaignid.
-	updation with edit those products
-	deletion is basically no discount, will set discount as 0 for all those products, then return the value */
-	// user := m.App.Session.Get(r.Context(), "user").(models.User)
-	// store := user.Store
-	store := models.Store{ID: 1} //stub
-	var c models.Campaign
-	c.CampaignID = 1 // stub
-	c.Store = store
-	action := chi.URLParam(r, "action")
+func (m *Repository) SendTrendingProducts(w http.ResponseWriter, r *http.Request) {
+	/* Initialize the function with the user and store context from the session */
+	user := m.App.Session.Get(r.Context(), "user").(models.User)
+	store := user.Store
 
-	switch action {
-	case "create":
-		err := m.DB.CreateCampaign(c)
-		_, _ = m.DB.CreateCampaignProducts(c)
-		// send list of products for the form
-		if err != nil {
-			log.Fatal(err)
-		}
-	case "update":
-		// Get campaignID from the request
-		campaign, _ := m.DB.GetCampaignByID(c.CampaignID) // TBC
-		_, err := m.DB.UpdateCampaignProducts(campaign)
-		if err != nil {
-			log.Fatal(err)
-		}
-	case "view":
-		campagin, err := m.DB.GetCampaignByID(c.CampaignID)
-		_, _ = m.DB.GetCampaignProducts(campagin.CampaignID)
-		if err != nil {
-			log.Fatal(err)
-		}
-		// send the list as a response
-	case "list":
-		data, err := m.DB.ListAllCampaigns(store.ID)
-		if err != nil {
-			fmt.Println(err)
-		}
-		// Marshal the map to a JSON string
-		jsonData, err := json.Marshal(data)
-		if err != nil {
-			fmt.Println("Error:", err)
-			return
-		}
-		// Print the JSON string using fmt.Fprintf
-		fmt.Println(len(data))
-		fmt.Fprintf(w, "%s\n", jsonData)
+	/* DB API to fetch the most added products by end customers */
+	list, err := m.DB.GetTopProductsByStore(store.ID)
+	if err != nil {
+		m.App.ErrorLog.Println(err)
 	}
+
+	data := models.TopProducts{}
+
+	for _, product := range list {
+		/* Get product from shopify to fetch images etc
+		We can pre store this info while initializing in the DB as well
+		Since we get only 2 things from shopify: title and image
+		*/
+		p, err := store.GetProductById(product.ProductID)
+		if err != nil {
+			m.App.ErrorLog.Println(err)
+		}
+		var prod struct {
+			ProductName  string
+			ProductImage string
+			Users        int
+			Discount     struct {
+				Value        int
+				CurrencyType string
+			}
+			Gmv struct {
+				Value        int
+				CurrencyType string
+			}
+		}
+		prod.ProductName = p.Title
+		prod.ProductImage = p.Image.Src
+		prod.Users = product.Deals
+		prod.Discount.CurrencyType = "US Dollar"
+		prod.Discount.Value = product.DealDiscount
+		prod.Gmv.CurrencyType = "US Dollar"
+		prod.Gmv.Value = product.Price - product.DealDiscount
+
+		data.Products = append(data.Products, prod)
+	}
+
+	// Marshal the map into a JSON string
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		m.App.ErrorLog.Println(err)
+	}
+
+	fmt.Fprintf(w, "%s\n", jsonData)
 }
 
 /*
 SendAggregateData returns the aggregate count gmv, roducts, and users
 incorporated via deal list
 */
+func (m *Repository) SendActiveCampaignAggregate(w http.ResponseWriter, r *http.Request) {
+	user := m.App.Session.Get(r.Context(), "user").(models.User)
+	store := user.Store
+
+	campaign, err := m.DB.GetActiveCampaign(store)
+	if err != nil {
+		fmt.Println(err)
+	}
+	data, err := m.DB.SelectFromCampaignById(int64(campaign.CampaignID), time.Now(),
+		"SUM(price), COUNT(*), SUM(deals), SUM(dealdiscount*price/100)", "campaign_product", "campaignid = $1 and timestamp <= $2")
+	if err != nil {
+		m.App.ErrorLog.Println(err)
+	}
+	stats := models.AggregateStats{}
+	stats.ActiveCampaignID = campaign.CampaignID
+	stats.ActiveUsers.ActiveUsersInSession = data["users"]
+	stats.Discount.Value = data["discounts"]
+	stats.GmvActiveSession.CurrencyType = "US Dollar"
+	stats.GmvActiveSession.Value = data["gmv"]
+	stats.ProductsActiveSession.Products = data["products"]
+
+	// Marshal the map into a JSON string
+	jsonData, err := json.Marshal(stats)
+	if err != nil {
+		m.App.ErrorLog.Println(err)
+	}
+
+	fmt.Fprintf(w, "%s\n", jsonData)
+}
+
 func (m *Repository) SendAggregateData(w http.ResponseWriter, r *http.Request) {
-	//user := m.App.Session.Get(r.Context(), "user").(models.User)
-	//store := user.Store
-	store := models.Store{ID: 1} //stub
-	column := chi.URLParam(r, "colId")
-	t := chi.URLParam(r, "tStub")
-	startTime := time.Now()
-	i, err := strconv.Atoi(t[:len(t)-1])
+	user := m.App.Session.Get(r.Context(), "user").(models.User)
+	store := user.Store
+
+	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		log.Fatal(err)
-	}
-	if t[len(t)-1] == 'h' {
-		startTime = startTime.Add(-1 * time.Duration(i) * time.Hour)
-	} else if t[len(t)-1] == 'd' {
-		startTime = startTime.Add(-24 * time.Duration(i) * time.Hour)
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
 	}
 
-	switch column {
-	case "gmv":
-		/* SELECT SUM(price)
-		   FROM   campaign_product
-		   WHERE  storeid = $1
-		   AND	  timestamp >= $2 */
-		data, err := m.DB.SelectFromCampaignByStore(store.ID, startTime, "SUM(price)", "campaign_product", "storeid = $1 AND timestamp >= $2")
-		if err != nil {
-			fmt.Println(err)
-		}
-		// Marshal the map to a JSON string
-		jsonData, err := json.Marshal(data)
-		if err != nil {
-			fmt.Println("Error:", err)
-			return
-		}
-		// Print the JSON string using fmt.Fprintf
-		fmt.Fprintf(w, "%s\n", jsonData)
-	case "products":
-		/* SELECT SUM(deals)
-		   FROM   campaign_product
-		   WHERE  storeid = $1
-		   AND	  timestamp >= $2 */
-		data, err := m.DB.SelectFromCampaignByStore(store.ID, startTime, "SUM(deals)", "campaign_product", "storeid = $1 AND timestamp >= $2")
-		if err != nil {
-			fmt.Println(err)
-		}
-		// Marshal the map to a JSON string
-		jsonData, err := json.Marshal(data)
-		if err != nil {
-			fmt.Println("Error:", err)
-			return
-		}
-		// Print the JSON string using fmt.Fprintf
-		fmt.Fprintf(w, "%s\n", jsonData)
-	case "users":
-		/* SELECT COUNT(*)
-		   FROM   buyer
-		   WHERE  storeid = $1
-		   AND    timestamp >= $2
-		   AND	  LENGTH(TRIM(email)) <> 0 */
-		data, err := m.DB.SelectFromCampaignByStore(store.ID, startTime, "COUNT(*)", "buyer", "storeid = $1 AND timestamp >= $2")
-		if err != nil {
-			fmt.Println(err)
-		}
-		// Marshal the map to a JSON string
-		jsonData, err := json.Marshal(data)
-		if err != nil {
-			fmt.Println("Error:", err)
-			return
-		}
-		// Print the JSON string using fmt.Fprintf
-		fmt.Fprintf(w, "%s\n", jsonData)
-	case "discounts":
-		/* SELECT SUM(dealdiscount)
-		   FROM   campaign_product
-		   WHERE  stroreid = $1
-		   AND	  timestamp >= $2 */
-		data, err := m.DB.SelectFromCampaignByStore(store.ID, startTime, "SUM(dealdiscount*price/100)", "campaign_product", "storeid = $1 AND timestamp >= $2")
-		if err != nil {
-			fmt.Println(err)
-		}
-		// Marshal the map to a JSON string
-		jsonData, err := json.Marshal(data)
-		if err != nil {
-			fmt.Println("Error:", err)
-			return
-		}
-		// Print the JSON string using fmt.Fprintf
-		fmt.Fprintf(w, "%s\n", jsonData)
+	var requestBody struct {
+		DuratonType  string `json:"durationType"`
+		DealListType string `json:"dealListType"`
 	}
+	if err := json.Unmarshal(body, &requestBody); err != nil {
+		http.Error(w, "Failed to parse JSON", http.StatusBadRequest)
+		m.App.ErrorLog.Println(err)
+		return
+	}
+
+	// typ := requestBody.DealListType
+	duration := requestBody.DuratonType
+	startTime := time.Now()
+	switch duration {
+	case "12hours":
+		startTime = startTime.Add(-12 * time.Hour)
+	case "24hours":
+		startTime = startTime.Add(-24 * time.Hour)
+	case "weekly":
+		startTime = startTime.Add(-24 * 7 * time.Hour)
+	case "monthly":
+		startTime = startTime.Add(-24 * 30 * time.Hour)
+	}
+
+	/* SELECT SUM(price), COUNT(*), SUM(deals), SUM(dealdiscount*price/100)
+	   FROM   campaign_product
+	   WHERE  storeid = $1
+	   AND	  timestamp >= $2 */
+
+	data, err := m.DB.SelectFromCampaignById(int64(store.ID), startTime,
+		"SUM(price), COUNT(*), SUM(deals), SUM(dealdiscount*price/100)", "campaign_product", "storeid = $1 and timestamp >= $2")
+	if err != nil {
+		m.App.ErrorLog.Println(err)
+	}
+	stats := models.AggregateForGraphs{}
+	stats.DiscountSpends.Price = data["discounts"]
+	stats.Users.Price = data["users"]
+	stats.Gmv.Price = data["gmv"]
+	stats.Products.Price = data["products"]
+	/* SELECT DATE_TRUNC('hour', timestamp - interval '1 hour' * (EXTRACT(HOUR FROM timestamp) % 6)) AS interval,
+	   SUM(price), COUNT(*),
+	   SUM(deals), SUM(dealdiscount*price/100)
+	   FROM   campaign_product
+	   WHERE  storeid = $1
+	   AND	  timestamp >= $2
+	   GROUP BY interval
+	   ORDER BY interval;
+	*/
+	// Marshal the map into a JSON string
+	seriesData, err := m.DB.GetGroupSeriesData(int64(store.ID), startTime)
+	if err != nil {
+		m.App.ErrorLog.Println(err)
+	}
+
+	stats.GmvData = seriesData[0]
+	stats.ProductsData = seriesData[1]
+	stats.UsersData = seriesData[2]
+	stats.DiscountsData = seriesData[3]
+
+	jsonData, err := json.Marshal(stats)
+	if err != nil {
+		m.App.ErrorLog.Println(err)
+	}
+
+	fmt.Fprintf(w, "%s\n", jsonData)
 }
 
-func (m *Repository) SendSeriesData(w http.ResponseWriter, r *http.Request) {
-	//user := m.App.Session.Get(r.Context(), "user").(models.User)
-	//store := user.Store
-	store := models.Store{ID: 1} //stub
-	column := chi.URLParam(r, "colId")
-	t := chi.URLParam(r, "tStub")
-	startTime := time.Now()
-	i, err := strconv.Atoi(t[:len(t)-1])
+func (m *Repository) SendOtfVisitorData(w http.ResponseWriter, r *http.Request) {
+	user := m.App.Session.Get(r.Context(), "user").(models.User)
+	store := user.Store
+
+	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		log.Fatal(err)
-	}
-	if t[len(t)-1] == 'h' {
-		startTime = startTime.Add(-1 * time.Duration(i) * time.Hour)
-	} else if t[len(t)-1] == 'd' {
-		startTime = startTime.Add(-24 * time.Duration(i) * time.Hour)
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
 	}
 
-	switch column {
-	case "gmv":
-		/* SELECT price
-		   FROM   campaign_product
-		   WHERE  stroreid = $1
-		   AND	  timestamp >= $2 */
-		data, err := m.DB.SelectFromCampaignByStore(store.ID, startTime, "price, timestamp", "campaign_product", "storeid = $1 AND timestamp >= $2")
-		if err != nil {
-			fmt.Println(err)
-		}
-		// Marshal the map to a JSON string
-		jsonData, err := json.Marshal(data)
-		if err != nil {
-			fmt.Println("Error:", err)
-			return
-		}
-		// Print the JSON string using fmt.Fprintf
-		fmt.Fprintf(w, "%s\n", jsonData)
-	case "products":
-		/* SELECT deals, timestamp
-		   FROM   campaign_product
-		   WHERE  stroreid = $1
-		   AND	  timestamp >= $2 */
-		data, err := m.DB.SelectFromCampaignByStore(store.ID, startTime, "deals, timestamp", "campaign_product", "storeid = $1 AND timestamp >= $2")
-		if err != nil {
-			fmt.Println(err)
-		}
-		// Marshal the map to a JSON string
-		jsonData, err := json.Marshal(data)
-		if err != nil {
-			fmt.Println("Error:", err)
-			return
-		}
-		// Print the JSON string using fmt.Fprintf
-		fmt.Fprintf(w, "%s\n", jsonData)
-	case "users":
-		/* SELECT timestamp
-		   FROM   buyer
-		   WHERE  storeid = $1
-		   AND    timestamp >= $2
-		   AND	  LENGTH(TRIM(email)) <> 0 */
-		data, err := m.DB.SelectFromCampaignByStore(store.ID, startTime, "anonymousid, timestamp", "buyer", "storeid = $1 AND timestamp >= $2")
-		if err != nil {
-			fmt.Println(err)
-		}
-		// Marshal the map to a JSON string
-		jsonData, err := json.Marshal(data)
-		if err != nil {
-			fmt.Println("Error:", err)
-			return
-		}
-		// Print the JSON string using fmt.Fprintf
-		fmt.Fprintf(w, "%s\n", jsonData)
-	case "discounts":
-		/* SELECT dealdiscount
-		   FROM   campaign_product
-		   WHERE  stroreid = $1
-		   AND	  timestamp >= $2 */
-		data, err := m.DB.SelectFromCampaignByStore(store.ID, startTime, "dealdiscount*price/100, timestamp", "campaign_product", "storeid = $1 AND timestamp >= $2")
-		if err != nil {
-			fmt.Println(err)
-		}
-		// Marshal the map to a JSON string
-		jsonData, err := json.Marshal(data)
-		if err != nil {
-			fmt.Println("Error:", err)
-			return
-		}
-		// Print the JSON string using fmt.Fprintf
-		fmt.Fprintf(w, "%s\n", jsonData)
+	var requestBody struct {
+		DurationType string `json:"durationType"`
+		Type         string `json:"type"`
 	}
+
+	if err := json.Unmarshal(body, &requestBody); err != nil {
+		http.Error(w, "Failed to parse JSON", http.StatusBadRequest)
+		m.App.ErrorLog.Println(err)
+		return
+	}
+	startTime := time.Now()
+	switch requestBody.DurationType {
+	case "12hours":
+		startTime = startTime.Add(-12 * time.Hour)
+	case "24hours":
+		startTime = startTime.Add(-24 * time.Hour)
+	case "weekly":
+		startTime = startTime.Add(-24 * 7 * time.Hour)
+	case "monthly":
+		startTime = startTime.Add(-24 * 30 * time.Hour)
+	}
+
+	data, err := m.DB.GetAggregateOtfByDuration(startTime, requestBody.Type, store.ID)
+	if err != nil {
+		m.App.ErrorLog.Println(err)
+	}
+
+	stats := models.OtfResponse{}
+
+	stats.Otf = data
+
+	jsonData, err := json.Marshal(stats)
+	if err != nil {
+		m.App.ErrorLog.Println(err)
+	}
+
+	fmt.Fprintf(w, "%s\n", jsonData)
 }
 
-// Availability renders the search availability page
-func (m *Repository) ShowCampaignStats(w http.ResponseWriter, r *http.Request) {
+func (m *Repository) SendAllCampaigns(w http.ResponseWriter, r *http.Request) {
+	user := m.App.Session.Get(r.Context(), "user").(models.User)
+	store := user.Store
+
+	// data, err := m.DB.ListAllCampaigns(store.ID)
 
 }
 
