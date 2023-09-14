@@ -16,7 +16,15 @@ type DB struct {
 	SQL *sql.DB
 }
 
+type DBCreds struct {
+	Host     string
+	Port     int
+	Username string
+	Password string
+}
+
 var dbConn = &DB{}
+var clickhouseConn = &DB{}
 
 const maxOpenDbConn = 10
 const maxIdleDbConn = 5
@@ -42,6 +50,26 @@ func ConnectSQL(dsn string) (*DB, error) {
 	return dbConn, nil
 }
 
+func ConnectClickhouse(dsn string) (*DB, error) {
+	d, err := NewClickhouseDatabase(dsn)
+	if err != nil {
+		panic(err)
+	}
+
+	d.SetMaxOpenConns(maxOpenDbConn)
+	d.SetMaxIdleConns(maxIdleDbConn)
+	d.SetConnMaxLifetime(maxDbLifetime)
+
+	clickhouseConn.SQL = d
+
+	err = testDB(d)
+	if err != nil {
+		return nil, err
+	}
+	return clickhouseConn, nil
+
+}
+
 // testDB tries to ping the database
 func testDB(d *sql.DB) error {
 	err := d.Ping()
@@ -54,14 +82,28 @@ func testDB(d *sql.DB) error {
 		log.Fatal(err)
 	}
 
-	// Print the PostgreSQL version
-	fmt.Printf("PostgreSQL Version: %s\n", version)
+	// Print the DB version
+	fmt.Printf("DB Version: %s\n", version)
 	return nil
 }
 
 // NewDatabase creates a new database for the application
 func NewDatabase(dsn string) (*sql.DB, error) {
 	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return nil, err
+	}
+
+	if err = db.Ping(); err != nil {
+		return nil, err
+	}
+
+	return db, nil
+}
+
+// New Clickhouse DB for the app
+func NewClickhouseDatabase(dsn string) (*sql.DB, error) {
+	db, err := sql.Open("clickhouse", dsn)
 	if err != nil {
 		return nil, err
 	}

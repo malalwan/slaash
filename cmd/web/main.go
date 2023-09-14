@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	_ "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/alexedwards/scs/v2"
 	"github.com/malalwan/slaash/internal/config"
 	"github.com/malalwan/slaash/internal/driver"
@@ -22,6 +23,8 @@ var app config.AppConfig
 var session *scs.SessionManager
 var infoLog *log.Logger
 var errorLog *log.Logger
+var postgresCreds driver.DBCreds
+var clickhouseCreds driver.DBCreds
 
 /* the main function */
 func main() {
@@ -31,7 +34,7 @@ func main() {
 	}
 	defer db.SQL.Close()
 
-	fmt.Println(fmt.Sprintf("Staring application on port %s", portNumber))
+	app.InfoLog.Printf("Staring application on port %s", portNumber)
 
 	srv := &http.Server{
 		Addr:    portNumber,
@@ -44,14 +47,20 @@ func main() {
 	}
 }
 
+/*
+	Function to set up all global entities:
+
+1. AppConfig
+2. PostgresDB Config
+3. Clickhouse Config
+*/
 func run() (*driver.DB, error) {
-	/* what am I going to put in the session?
-	will be used to fetch store context for the dashboard
-	and display profile (editable?) */
+	/* what am I going to put in the session? */
 	gob.Register(models.User{})
 
 	/* to pick different DBs for test and prod and secure cookies */
 	app.InProduction = false
+
 	if app.InProduction {
 		app.MyAppCreds = []string{"7f4b95c01d4764f01cb658adfad31108", "54bb5ac2cbf15a6d6bdb8bdeafec00f6"}
 		app.MyScopes = []string{"dd", "bb"} // to be edited
@@ -62,16 +71,13 @@ func run() (*driver.DB, error) {
 		app.RedirectURL = "dashboard.slaash.it"
 	}
 
-	/* initialize my loggers
-	Will be needed to show info and error logs across the code */
+	/* initializing loggers */
 	infoLog = log.New(os.Stdout, "INFO\t", log.Ldate|log.Ltime)
 	app.InfoLog = infoLog
 	errorLog = log.New(os.Stdout, "ERROR\t", log.Ldate|log.Ltime|log.Lshortfile)
 	app.ErrorLog = errorLog
 
-	/* the session here is to monitor the
-	users who have logged into the dashboard
-	Secure cookies will hash out so won't be used for development */
+	/* session to monitor logged in user */
 	session = scs.New()
 	session.Lifetime = 24 * time.Hour
 	session.Cookie.Persist = true
@@ -81,25 +87,45 @@ func run() (*driver.DB, error) {
 	/* push the session to global app config for easy access */
 	app.Session = session
 
-	/* connect to slaash database */
-	log.Println("Connecting to database...")
+	/* Init postgres creds */
+	postgresCreds.Host = "pg-slaash-slaash-01.aivencloud.com"
+	postgresCreds.Port = 19236
+	postgresCreds.Username = "avnadmin"
+	postgresCreds.Password = "AVNS__o7qCttikmfMMABdM7J"
+	app.InfoLog.Println("Connecting to Database")
 	var dbname string
 	if app.InProduction {
 		dbname = "dashboard"
 	} else {
 		dbname = "defaultdb"
 	}
-	connString := fmt.Sprintf("host=pg-slaash-slaash-01.aivencloud.com port=19236 dbname=%s user=avnadmin password=AVNS__o7qCttikmfMMABdM7J", dbname)
+
+	connString := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s",
+		postgresCreds.Host, postgresCreds.Port, dbname,
+		postgresCreds.Username, postgresCreds.Password)
 	db, err := driver.ConnectSQL(connString)
 	if err != nil {
-		log.Fatal("Cannot connect to database! Dying...")
+		log.Fatal("Cannot connect to postgres database! Dying...")
 	}
-	log.Println(connString)
-	log.Println("Connected to database!")
+	app.InfoLog.Println("Connected to postgres database!")
 
-	/* Repo is a wrapper over appconfig. It stores DB info
-	over the global appconfig for request handling */
-	repo := handlers.NewRepo(&app, db)
+	/* Init clickhouse creds */
+	clickhouseCreds.Host = "clickhouse-slaash-01-slaash-01.aivencloud.com"
+	clickhouseCreds.Port = 19237
+	clickhouseCreds.Username = "avnadmin"
+	clickhouseCreds.Password = "AVNS_vqSF_mM4PoCemxvdn7H"
+
+	clickhouseString := fmt.Sprintf("https://%s:%d?username=%s&password=%s&secure",
+		clickhouseCreds.Host, clickhouseCreds.Port,
+		clickhouseCreds.Username, clickhouseCreds.Password)
+	clickhouse, err := driver.ConnectClickhouse(clickhouseString)
+	if err != nil {
+		log.Fatal("Cannot connect to clickhouse database! Dying...")
+	}
+	app.InfoLog.Println("Connected to clickhouse database!")
+
+	/* Set up globals for all packages */
+	repo := handlers.NewRepo(&app, db, clickhouse)
 	handlers.NewHandlers(repo)
 	helpers.NewHelpers(&app)
 	models.NewShopifyFunctions(&app)

@@ -9,30 +9,18 @@ import (
 	"github.com/malalwan/slaash/internal/models"
 )
 
-/*                                              Table "public.campaign"
-    Column    |            Type             | Collation | Nullable |                   Default
---------------+-----------------------------+-----------+----------+----------------------------------------------
- campaignid   | integer                     |           | not null | nextval('campaign_campaignid_seq'::regclass)
- storeid      | integer                     |           |          |
- timestamp    | timestamp without time zone |           |          |
- discount     | integer                     |           |          |
- activestatus | integer                     |           |          |
- misc         | text                        |           |          |
-Indexes:
-    "campaign_pkey" PRIMARY KEY, btree (campaignid)
-Foreign-key constraints:
-    "campaign_storeid_fkey" FOREIGN KEY (storeid) REFERENCES store(id)
-Referenced by:
-    TABLE "campaign_product" CONSTRAINT "campaign_product_campaignid_fkey" FOREIGN KEY (campaignid) REFERENCES campaign(campaignid)
-
+/* Table "public.campaign"
+    Column    |  Type
+--------------+--------
+ campaignid   | integer
+ storeid      | integer
+ timestamp    | timestamp without time zone
+ discount     | integer
+ activestatus | integer
+ misc         | text
 */
 
 func (m *postgresDBRepo) GetActiveCampaign(s models.Store) (models.Campaign, error) {
-	// pull active campaign(s) for a store from DB
-	/* SELECT *
-	FROM campaign
-	WHERE storeid = 1;
-	*/
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
@@ -64,10 +52,6 @@ func (m *postgresDBRepo) GetActiveCampaign(s models.Store) (models.Campaign, err
 }
 
 func (m *postgresDBRepo) CreateCampaign(c models.Campaign) error {
-	// create a campign and return it
-	/* INSERT INTO campaign (storeid, timestamp, discount, activestatus, misc)
-	VALUES ($1, $2, $3, $4, $5)
-	*/
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
@@ -196,30 +180,20 @@ func (m *postgresDBRepo) ListAllCampaigns(s int) ([]models.Campaign, error) {
 	return j, nil
 }
 
-/*
-	                                      Table "public.users"
-	Column    |            Type             | Collation | Nullable |              Default
-
--------------+-----------------------------+-----------+----------+-----------------------------------
-
-	id          | integer                     |           | not null | nextval('users_id_seq'::regclass)
-	firstname   | text                        |           |          |
-	lastname    | text                        |           |          |
-	email       | text                        |           |          |
-	password    | text                        |           |          |
-	accesslevel | integer                     |           |          |
-	createdat   | timestamp without time zone |           |          |
-	updatedat   | timestamp without time zone |           |          |
-	storeid     | integer                     |           |          |
-
-Indexes:
-
-	"users_pkey" PRIMARY KEY, btree (id)
-
-Foreign-key constraints:
-
-	"users_storeid_fkey" FOREIGN KEY (storeid) REFERENCES store(id)
+/* Table "public.users"
+	Column   |   Type
+-------------+-----------
+ id          | integer
+ firstname   | text
+ lastname    | text
+ email       | text
+ password    | text
+ accesslevel | integer
+ createdat   | timestamp without time zone
+ updatedat   | timestamp without time zone
+ storeid     | integer
 */
+
 func (m *postgresDBRepo) CreateUser(u models.User) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -247,25 +221,17 @@ func (m *postgresDBRepo) GetUserByStore(storeid int) (models.User, error) {
 	return models.User{}, nil
 }
 
-/*                                             Table "public.price_rule"
-      Column       |            Type             | Collation | Nullable |                Default
--------------------+-----------------------------+-----------+----------+----------------------------------------
- id                | integer                     |           | not null | nextval('price_rule_id_seq'::regclass)
- prid (add this)
- targettype        | text                        |           |          |
- targetselection   | text                        |           |          |
- valuetype         | text                        |           |          |
- value             | numeric                     |           |          |
- customerselection | text                        |           |          |
- allocationmethod  | text                        |           |          |
- startsat          | timestamp without time zone |           |          |
-Indexes:
-    "price_rule_pkey" PRIMARY KEY, btree (id)
-Referenced by:
-    TABLE "campaign_product" CONSTRAINT "campaign_product_priceruleid_fkey" FOREIGN KEY (priceruleid) REFERENCES price_rule(id)
-    TABLE "discount_code" CONSTRAINT "discount_code_priceruleid_fkey" FOREIGN KEY (priceruleid) REFERENCES price_rule(id)
-
-
+/* Table "public.price_rule"
+      Column       |  Type
+-------------------+--------
+ id                | integer
+ targettype        | text
+ targetselection   | text
+ valuetype         | text
+ value             | numeric
+ customerselection | text
+ allocationmethod  | text
+ startsat          | timestamp without time zone
 */
 
 func (m *postgresDBRepo) CreatePr(pr models.PriceRule) error {
@@ -296,27 +262,17 @@ func (m *postgresDBRepo) ListPr(storeid int) ([]models.PriceRule, error) {
 	return []models.PriceRule{}, nil
 }
 
-/*
-	                                       Table "public.discount_code"
-	Column    |            Type             | Collation | Nullable |                  Default
-
--------------+-----------------------------+-----------+----------+-------------------------------------------
-
-	id          | integer                     |           | not null | nextval('discount_code_id_seq'::regclass)
-	priceruleid | integer                     |           |          |
-	code        | text                        |           |          |
-	usagecount  | integer                     |           |          |
-	createdat   | timestamp without time zone |           |          |
-	updatedat   | timestamp without time zone |           |          |
-
-Indexes:
-
-	"discount_code_pkey" PRIMARY KEY, btree (id)
-
-Foreign-key constraints:
-
-	"discount_code_priceruleid_fkey" FOREIGN KEY (priceruleid) REFERENCES price_rule(id)
+/* Table "public.discount_code"
+	Column   |   Type
+ ------------+-----------
+ id          | integer
+ priceruleid | integer
+ code        | text
+ usagecount  | integer
+ createdat   | timestamp without time zone
+ updatedat   | timestamp without time zone
 */
+
 func (m *postgresDBRepo) CreateDiscountCode(d models.DiscountCode) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -328,7 +284,7 @@ func (m *postgresDBRepo) CreateDiscountCode(d models.DiscountCode) error {
 			 	($1, $2, $3, $4, $5)`
 
 	_, err := m.DB.ExecContext(ctx, stmt, d.PriceRuleID, d.Code,
-		d.UsageCount, d.CreatedAt, d.UpdatedAt)
+		d.UsageCount, d.Timestamp, d.Timestamp)
 	if err != nil {
 		return err
 	}
@@ -343,25 +299,18 @@ func (m *postgresDBRepo) GetDiscountsByPr(pr models.PriceRule) ([]models.Discoun
 	return []models.DiscountCode{}, nil
 }
 
-/*                                              Table "public.buyer"
-   Column    |            Type             | Collation | Nullable |                  Default
--------------+-----------------------------+-----------+----------+--------------------------------------------
- anonymousid | integer                     |           | not null | nextval('buyer_anonymousid_seq'::regclass)
- email       | text                        |           |          |
- storeid     | integer                     |           |          |
- productid   | integer                     |           |          |
- timestamp   | timestamp without time zone |           |          |
- gotdeal     | boolean                     |           |          |
- clickeddeal | boolean                     |           |          |
- cpid        | integer                     |           |          |
- misc        | text                        |           |          |
-Indexes:
-    "buyer_pkey" PRIMARY KEY, btree (anonymousid)
-    "buyer_email_key" UNIQUE CONSTRAINT, btree (email)
-Foreign-key constraints:
-    "buyer_cpid_fkey" FOREIGN KEY (cpid) REFERENCES campaign_product(id)
-    "buyer_storeid_fkey" FOREIGN KEY (storeid) REFERENCES store(id)
-
+/* Table "public.buyer"
+   Column    |  Type
+-------------+--------
+ anonymousid | integer
+ email       | text
+ storeid     | integer
+ productid   | integer
+ timestamp   | timestamp without time zone
+ gotdeal     | boolean
+ clickeddeal | boolean
+ cpid        | integer
+ misc        | text
 */
 
 func (m *postgresDBRepo) CreateBuyer(b models.Buyer) error {
@@ -440,23 +389,15 @@ func (m *postgresDBRepo) GetAggregateOtfByDuration(ts time.Time, typ string, id 
 	return otfMap, nil
 }
 
-/*                                Table "public.store"
-    Column    |  Type   | Collation | Nullable |              Default
---------------+---------+-----------+----------+-----------------------------------
- id           | integer |           | not null | nextval('store_id_seq'::regclass)
- name         | text    |           |          |
- apitoken     | text    |           |          |
- refreshtoken | text    |           |          |
- misc         | text    |           |          |
- url          | text    |           |          |
-Indexes:
-    "store_pkey" PRIMARY KEY, btree (id)
-Referenced by:
-    TABLE "buyer" CONSTRAINT "buyer_storeid_fkey" FOREIGN KEY (storeid) REFERENCES store(id)
-    TABLE "campaign_product" CONSTRAINT "campaign_product_storeid_fkey" FOREIGN KEY (storeid) REFERENCES store(id)
-    TABLE "campaign" CONSTRAINT "campaign_storeid_fkey" FOREIGN KEY (storeid) REFERENCES store(id)
-    TABLE "users" CONSTRAINT "users_storeid_fkey" FOREIGN KEY (storeid) REFERENCES store(id)
-
+/* Table "public.store"
+    Column    |  Type
+--------------+--------
+ id           | integer
+ name         | text
+ apitoken     | text
+ refreshtoken | text
+ misc         | text
+ url          | text
 */
 
 func (m *postgresDBRepo) CreateStore(s models.Store) error {
@@ -501,31 +442,22 @@ func (m *postgresDBRepo) UpdateStore(s models.Store) (models.Store, error) {
 	return models.Store{}, nil
 }
 
-/*                                          Table "public.campaign_product"
-    Column    |            Type             | Collation | Nullable |                   Default
---------------+-----------------------------+-----------+----------+----------------------------------------------
- id           | integer                     |           | not null | nextval('campaign_product_id_seq'::regclass)
- campaignid   | integer                     |           |          |
- productid    | integer                     |           |          |
- title        | text                        |           |          |
- storeid      | integer                     |           |          |
- deals        | integer                     |           |          |
- sold         | integer                     |           |          |
- dealdiscount | integer                     |           |          |
- emailsentto  | text[]                      |           |          |
- misc         | text                        |           |          |
- priceruleid  | integer                     |           |          |
- timestamp    | timestamp without time zone |           |          |
- price        | integer                     |           |          |
-Indexes:
-    "campaign_product_pkey" PRIMARY KEY, btree (id)
-Foreign-key constraints:
-    "campaign_product_campaignid_fkey" FOREIGN KEY (campaignid) REFERENCES campaign(campaignid)
-    "campaign_product_priceruleid_fkey" FOREIGN KEY (priceruleid) REFERENCES price_rule(id)
-    "campaign_product_storeid_fkey" FOREIGN KEY (storeid) REFERENCES store(id)
-Referenced by:
-    TABLE "buyer" CONSTRAINT "buyer_cpid_fkey" FOREIGN KEY (cpid) REFERENCES campaign_product(id)
-
+/* Table "public.campaign_product"
+    Column    |  Type
+--------------+--------
+ id           | integer
+ campaignid   | integer
+ productid    | integer
+ title        | text
+ storeid      | integer
+ deals        | integer
+ sold         | integer
+ dealdiscount | integer
+ emailsentto  | text[]
+ misc         | text
+ priceruleid  | integer
+ timestamp    | timestamp without time zone
+ price        | integer
 */
 
 func (m *postgresDBRepo) CreateCampaignProduct(cp models.CampaignProduct) error {
@@ -548,7 +480,6 @@ func (m *postgresDBRepo) CreateCampaignProduct(cp models.CampaignProduct) error 
 	return nil
 }
 
-/* Function to retrieve all products that are part of a specific campaign */
 func (m *postgresDBRepo) GetCampaignProducts(c int64) ([]models.CampaignProduct, error) {
 	// pull all campaign products with the given campaing ID from DB
 	/* SELECT *

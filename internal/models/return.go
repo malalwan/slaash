@@ -1,5 +1,12 @@
 package models
 
+/* This file contains structures used to
+send data back to the dashboard as Json
+All unique responses need to be defined
+here for better visibility on the handlers
+*/
+
+/* Json map for top 5 products list */
 type TopProducts struct {
 	Products []struct {
 		ProductName  string
@@ -16,6 +23,7 @@ type TopProducts struct {
 	}
 }
 
+/* Json map for active campaign stats */
 type AggregateStats struct {
 	Discount struct {
 		Value int
@@ -45,6 +53,7 @@ type AggregateStats struct {
 	ActiveCampaignID int64
 }
 
+/* Json map for graphs + aggregate for overall stats */
 type AggregateForGraphs struct {
 	Gmv struct {
 		Price       int
@@ -83,6 +92,7 @@ type AggregateForGraphs struct {
 	DiscountsData map[string]int
 }
 
+/* Json for OTF graph */
 type OtfResponse struct {
 	Otf map[string]int
 }

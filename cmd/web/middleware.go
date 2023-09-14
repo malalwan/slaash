@@ -33,6 +33,7 @@ func Auth(next http.Handler) http.Handler {
 			http.Redirect(w, r, "/user/login", http.StatusSeeOther)
 			return
 		}
+		app.InfoLog.Println("Authentication successful")
 		next.ServeHTTP(w, r)
 	})
 }
@@ -49,6 +50,7 @@ func AddTestStoreToSession(next http.Handler) http.Handler {
 		user.Store.Name = "spend-more-money.myshopify.com"
 
 		session.Put(r.Context(), "user", user)
+		app.InfoLog.Println("Test store added to the session")
 		next.ServeHTTP(w, r)
 	})
 }

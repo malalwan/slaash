@@ -42,3 +42,7 @@ type DatabaseRepo interface {
 	DeleteDiscountCode(d models.DiscountCode) error
 	GetDiscountsByPr(pr models.PriceRule) ([]models.DiscountCode, error)
 }
+
+type ClickhouseRepo interface {
+	AllUsers()
+}

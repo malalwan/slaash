@@ -22,16 +22,17 @@ var Repo *Repository
 
 // Repository is the repository type
 type Repository struct {
-	App  *config.AppConfig
-	DB   repository.DatabaseRepo
-	User models.Store
+	App        *config.AppConfig
+	DB         repository.DatabaseRepo
+	Clickhouse repository.ClickhouseRepo
 }
 
 // NewRepo creates a new repository
-func NewRepo(a *config.AppConfig, db *driver.DB) *Repository {
+func NewRepo(a *config.AppConfig, db *driver.DB, clickhouse *driver.DB) *Repository {
 	return &Repository{
-		App: a,
-		DB:  dbrepo.NewPostgresRepo(db.SQL, a),
+		App:        a,
+		DB:         dbrepo.NewPostgresRepo(db.SQL, a),
+		Clickhouse: dbrepo.NewClickhouseRepo(clickhouse.SQL, a),
 	}
 }
 
@@ -239,11 +240,6 @@ func (m *Repository) SendAggregateData(w http.ResponseWriter, r *http.Request) {
 		startTime = startTime.Add(-24 * 30 * time.Hour)
 	}
 
-	/* SELECT SUM(price), COUNT(*), SUM(deals), SUM(dealdiscount*price/100)
-	   FROM   campaign_product
-	   WHERE  storeid = $1
-	   AND	  timestamp >= $2 */
-
 	data, err := m.DB.SelectFromCampaignById(int64(store.ID), startTime,
 		"SUM(price), COUNT(*), SUM(deals), SUM(dealdiscount*price/100)", "campaign_product", "storeid = $1 and timestamp >= $2")
 	if err != nil {
@@ -254,15 +250,7 @@ func (m *Repository) SendAggregateData(w http.ResponseWriter, r *http.Request) {
 	stats.Users.Price = data["users"]
 	stats.Gmv.Price = data["gmv"]
 	stats.Products.Price = data["products"]
-	/* SELECT DATE_TRUNC('hour', timestamp - interval '1 hour' * (EXTRACT(HOUR FROM timestamp) % 6)) AS interval,
-	   SUM(price), COUNT(*),
-	   SUM(deals), SUM(dealdiscount*price/100)
-	   FROM   campaign_product
-	   WHERE  storeid = $1
-	   AND	  timestamp >= $2
-	   GROUP BY interval
-	   ORDER BY interval;
-	*/
+
 	// Marshal the map into a JSON string
 	seriesData, err := m.DB.GetGroupSeriesData(int64(store.ID), startTime)
 	if err != nil {
@@ -332,8 +320,8 @@ func (m *Repository) SendOtfVisitorData(w http.ResponseWriter, r *http.Request) 
 }
 
 func (m *Repository) SendAllCampaigns(w http.ResponseWriter, r *http.Request) {
-	user := m.App.Session.Get(r.Context(), "user").(models.User)
-	store := user.Store
+	//user := m.App.Session.Get(r.Context(), "user").(models.User)
+	//store := user.Store
 
 	// data, err := m.DB.ListAllCampaigns(store.ID)
 
