@@ -1,5 +1,7 @@
 package models
 
+import "time"
+
 /* This file contains structures used to
 send data back to the dashboard as Json
 All unique responses need to be defined
@@ -24,7 +26,7 @@ type TopProducts struct {
 }
 
 /* Json map for active campaign stats */
-type AggregateStats struct {
+type CampaignActivity struct {
 	Discount struct {
 		Value int
 	}
@@ -33,53 +35,56 @@ type AggregateStats struct {
 		Value        int
 		GmvVertical  struct {
 			Positive         bool
-			ChangePercentage int
+			ChangePercentage float32
 		}
 	}
 	ProductsActiveSession struct {
 		Products         int
 		ProductsVertical struct {
 			Positive         bool
-			ChangePercentage int
+			ChangePercentage float32
 		}
 	}
 	ActiveUsers struct {
 		ActiveUsersInSession int
 		ActiveUsersVertical  struct {
 			Positive         bool
-			ChangePercentage int
+			ChangePercentage float32
 		}
 	}
-	ActiveCampaignID int64
+	CampaignEndTime struct {
+		Value  string
+		Nextin int
+	}
 }
 
 /* Json map for graphs + aggregate for overall stats */
-type AggregateForGraphs struct {
+type DealListActivity struct {
 	Gmv struct {
 		Price       int
 		GmvVertical struct {
-			VerticalVal int
+			VerticalVal float32
 			GmvVertical bool
 		}
 	}
 	Products struct {
 		Price            int
 		ProductsVertical struct {
-			VerticalVal      int
+			VerticalVal      float32
 			ProductsVertical bool
 		}
 	}
 	Users struct {
 		Price         int
 		UsersVertical struct {
-			VerticalVal   int
-			UsersVertical string
+			VerticalVal   float32
+			UsersVertical bool
 		}
 	}
 	DiscountSpends struct {
 		Price                  int
 		DiscountSpendsVertical struct {
-			VerticalVal            int
+			VerticalVal            float32
 			DiscountSpendsVertical bool
 		}
 	}
@@ -95,4 +100,44 @@ type AggregateForGraphs struct {
 /* Json for OTF graph */
 type OtfResponse struct {
 	Otf map[string]int
+}
+
+/* VisitTable is the mapping for OTF algorithm and is used to cache that info in Postgres */
+type VisitTable struct {
+	AnonymousID      string
+	FavClick         string
+	MaxScrollDepth   int8
+	ScrollVicinity   int8
+	ScrollMap        map[int8]int16
+	IndividualVisits int8
+	LastAction       string
+	LastActionTime   time.Time
+	AddToCarts       int8
+	CartItemsOmw     map[string]int8
+	ImageClicks      int32
+	StoreRoot        string
+	Images           map[string]int16
+	FavImage         string
+	Referrer         string
+	Pages            map[string]int16
+	NumPages         int16
+	NumClicks        int16
+	AvgClickDistance float64
+	ClickMap         map[string]int16
+	LastClickTime    time.Time
+	FavPage          string
+}
+
+type Camapign struct {
+	StartTime             time.Time
+	EndTime               time.Time
+	DiscountValue         float32
+	GmvValue              float32
+	Users                 int
+	Products              int
+	Aov                   float32
+	Impressions           int64
+	PromoCopied           int64
+	SuccessfulRedemptions int64
+	Conversions           int64
 }

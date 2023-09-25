@@ -7,6 +7,19 @@ import (
 )
 
 type DatabaseRepo interface {
+	// new shit
+	StopDealList(id int) error
+	SetTurnOffTime(id int) error
+	GetCampignEndTime(id int) (time.Time, error)
+	GetAggFromCheckout(id int) (map[string][]int, error)
+	GetAggFromVisitor(id int) (map[string][]int, error)
+	GetDealDataFromCheckout(t1 time.Time, t2 time.Time, id int) (map[string][]int, error)
+	GetDealDataFromVisitor(t1 time.Time, t2 time.Time, id int) (map[string][]int, error)
+	GetSeriesDataFromCheckout(t time.Time, id int) ([]map[string]int, error)
+	GetSeriesDataFromVisitor(t time.Time, id int) ([]map[string]int, error)
+	GetTopProducts(id int) ([]int64, []int, []int, []int, error)
+	GetAggOtfByDuration(ts time.Time, id int) (map[string]int, error)
+	GetAllCampaigns(storeid int) ([]models.Camapign, error)
 	// campaign_product
 	CreateCampaignProduct(cp models.CampaignProduct) error
 	GetCampaignProducts(c int64) ([]models.CampaignProduct, error)
@@ -16,7 +29,7 @@ type DatabaseRepo interface {
 	GetActiveCampaign(s models.Store) (models.Campaign, error)
 	CreateCampaign(c models.Campaign) error
 	GetCampaignByID(id int64) (models.Campaign, error)
-	ListAllCampaigns(storeid int) ([]models.Campaign, error)
+
 	SelectFromCampaignById(id int64, ts time.Time, s string, f string, w string) (map[string]int, error)
 	GetGroupSeriesData(id int64, ts time.Time) ([]map[string]int, error)
 	// store
@@ -27,7 +40,6 @@ type DatabaseRepo interface {
 	CreateBuyer(b models.Buyer) error
 	UpdateBuyer(b models.Buyer) (models.Buyer, error)
 	GetBuyersByStore(storeid int) ([]models.Buyer, error)
-	GetAggregateOtfByDuration(ts time.Time, typ string, id int) (map[string]int, error)
 	// user
 	CreateUser(u models.User) error
 	UpdateUser(u models.User) (models.User, error)
@@ -45,4 +57,5 @@ type DatabaseRepo interface {
 
 type ClickhouseRepo interface {
 	AllUsers()
+	PullStreamByAnonymousID(id string) (models.VisitTable, error)
 }

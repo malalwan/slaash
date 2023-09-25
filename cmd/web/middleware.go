@@ -33,6 +33,7 @@ func Auth(next http.Handler) http.Handler {
 			http.Redirect(w, r, "/user/login", http.StatusSeeOther)
 			return
 		}
+		/* add a check for the sexy otf api, if it's one of the stores, let it come in */
 		app.InfoLog.Println("Authentication successful")
 		next.ServeHTTP(w, r)
 	})

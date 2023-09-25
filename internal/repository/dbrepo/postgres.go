@@ -3,7 +3,6 @@ package dbrepo
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"time"
 
 	"github.com/malalwan/slaash/internal/models"
@@ -20,165 +19,532 @@ import (
  misc         | text
 */
 
-func (m *postgresDBRepo) GetActiveCampaign(s models.Store) (models.Campaign, error) {
+func (m *postgresDBRepo) StopDealList(id int) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	stmt := `select * from campaign where 
-			storeid = $1`
+	stmt := `UPDATE store
+	 	 	 SET deal_list_active = FALSE
+	 	 	 WHERE id = $1`
 
-	rows, err := m.DB.QueryContext(ctx, stmt, s.ID)
+	_, err := m.DB.ExecContext(ctx, stmt, id)
 	if err != nil {
-		return models.Campaign{}, err
-	}
-	defer rows.Close()
-
-	var campaigns []models.Campaign
-
-	for rows.Next() {
-		var c models.Campaign
-		err := rows.Scan(&c.CampaignID, &c.Store.ID, &c.Timestamp,
-			&c.Discount, &c.ActiveStatus, &c.Misc)
-		if err != nil {
-			return models.Campaign{}, err
-		}
-		campaigns = append(campaigns, c)
-	}
-	if err := rows.Err(); err != nil {
-		return models.Campaign{}, err
-	}
-
-	return campaigns[0], nil
-}
-
-func (m *postgresDBRepo) CreateCampaign(c models.Campaign) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	stmt := `select * from campaign where 
-			storeid = $1`
-
-	_, err := m.DB.ExecContext(ctx, stmt, c.Store.ID, time.Now(), c.Discount, c.ActiveStatus, c.Misc)
-	if err != nil {
+		m.App.ErrorLog.Println("DB insertion failed")
 		return err
 	}
-
 	return nil
 }
 
-func (m *postgresDBRepo) SelectFromCampaignById(id int64, ts time.Time, s string, f string, w string) (map[string]int, error) {
+func (m *postgresDBRepo) SetTurnOffTime(id int) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	stmt := fmt.Sprintf("select %s from %s where %s", s, f, w)
-	j := make(map[string]int)
-	rows, err := m.DB.QueryContext(ctx, stmt, id, ts)
-	if err != nil {
-		return j, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var g, p, u, d sql.NullInt64
-		err = rows.Scan(&g, &p, &u, &d)
-		if !g.Valid {
-			j["gmv"] = 0
-			return j, nil
-		}
-		if err != nil {
-			return j, err
-		}
-		j["gmv"] = int(g.Int64)
-		j["products"] = int(p.Int64)
-		j["users"] = int(u.Int64)
-		j["discounts"] = int(d.Int64)
-	}
+	stmt := `UPDATE store
+			 SET campaign_turn_off_time $1
+			 WHERE id = $2`
 
-	return j, nil
+	_, err := m.DB.ExecContext(ctx, stmt, time.Now(), id)
+	if err != nil {
+		m.App.ErrorLog.Println("DB insertion failed")
+		return err
+	}
+	return nil
 }
 
-func (m *postgresDBRepo) GetGroupSeriesData(id int64, ts time.Time) ([]map[string]int, error) {
+func (m *postgresDBRepo) GetCampignEndTime(id int) (time.Time, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	stmt := `SELECT campagin_renewal_time
+			 FROM store
+			 WHERE id = $1`
+
+	rows, err := m.DB.QueryContext(ctx, stmt, id)
+	if err != nil {
+		m.App.ErrorLog.Println("DB extraction failed")
+		return time.Now(), err
+	}
+	defer rows.Close()
+	var t time.Time
+	for rows.Next() {
+		err := rows.Scan(&t)
+		if err != nil {
+			m.App.ErrorLog.Panicln("Assignment of extracted value from DB failed")
+			return time.Now(), err
+		}
+
+		ct := time.Now()
+		ch, cm, cs := ct.Clock()
+		h, m, s := t.Clock()
+		after := false
+		if h > ch {
+			after = true
+		} else if h == ch {
+			if m > cm {
+				after = true
+			} else if m == cm {
+				if s > cs {
+					after = true
+				} else if s == cs {
+					after = true
+				}
+			}
+		}
+
+		if after {
+			t = time.Date(ct.Year(), ct.Month(), ct.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), t.Location())
+		} else {
+			t = time.Date(ct.Year(), ct.Month(), ct.Day()+1, t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), t.Location())
+		}
+	}
+
+	// push t to db again
+	return t, nil
+}
+
+func (m *postgresDBRepo) GetAggFromCheckout(id int) (map[string][]int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	mp := make(map[string][]int)
+
+	stmt1 := `SELECT SUM(gmv), SUM(discount_amount)
+			  FROM checkout
+			  WHERE timestamp > $1 AND store = $2`
+
+	stmt2 := `SELECT SUM(gmv), SUM(discount_amount)
+			  FROM checkout
+			  WHERE timestamp < $1 AND timestamp > $2 AND store = $3`
+
+	t, err := m.GetCampignEndTime(id)
+	if err != nil {
+		return mp, err
+	}
+
+	rows1, err := m.DB.QueryContext(ctx, stmt1, t, id)
+	if err != nil {
+		return mp, err
+	}
+	defer rows1.Close()
+
+	var gmv, disc int
+	for rows1.Next() {
+		err = rows1.Scan(&gmv, &disc)
+		if err != nil {
+			return mp, err
+		}
+	}
+
+	mp["gmv"] = []int{}
+	mp["discount"] = []int{}
+	mp["gmv"] = append(mp["gmv"], gmv)
+	mp["discount"] = append(mp["discount"], disc)
+
+	rows2, err := m.DB.QueryContext(ctx, stmt2, t, t.AddDate(0, 0, -1), id)
+	if err != nil {
+		return mp, err
+	}
+	defer rows2.Close()
+
+	for rows1.Next() {
+		err = rows1.Scan(&gmv, &disc)
+		if err != nil {
+			return mp, err
+		}
+	}
+
+	mp["gmv"] = append(mp["gmv"], gmv)
+	mp["discount"] = append(mp["discount"], disc)
+
+	return mp, nil
+}
+
+func (m *postgresDBRepo) GetAggFromVisitor(id int) (map[string][]int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	mp := make(map[string][]int)
+
+	stmt1 := `SELECT COUNT(anonymous_id), COUNT(DISTINCT product_id)
+			  FROM visitor
+			  WHERE timestamp > $1 AND store = $2`
+
+	stmt2 := `SELECT COUNT(anonymous_id), COUNT(DISTINCT product_id)
+			  FROM visitor
+			  WHERE timestamp < $1 AND timestamp > $2 AND store = $3`
+
+	t, err := m.GetCampignEndTime(id)
+	if err != nil {
+		return mp, err
+	}
+
+	rows1, err := m.DB.QueryContext(ctx, stmt1, t, id)
+	if err != nil {
+		return mp, err
+	}
+	defer rows1.Close()
+
+	var users, products int
+	for rows1.Next() {
+		err = rows1.Scan(&users, &products)
+		if err != nil {
+			return mp, err
+		}
+	}
+
+	mp["users"] = []int{}
+	mp["products"] = []int{}
+	mp["users"] = append(mp["users"], users)
+	mp["products"] = append(mp["products"], products)
+
+	rows2, err := m.DB.QueryContext(ctx, stmt2, t, t.AddDate(0, 0, -1), id)
+	if err != nil {
+		return mp, err
+	}
+	defer rows2.Close()
+
+	for rows1.Next() {
+		err = rows1.Scan(&users, &products)
+		if err != nil {
+			return mp, err
+		}
+	}
+
+	mp["users"] = append(mp["users"], users)
+	mp["products"] = append(mp["products"], products)
+
+	return mp, nil
+}
+
+func (m *postgresDBRepo) GetDealDataFromCheckout(t1 time.Time, t2 time.Time, id int) (map[string][]int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	mp := make(map[string][]int)
+
+	stmt1 := `SELECT SUM(gmv), SUM(discount_amount)
+			  FROM checkout
+			  WHERE timestamp > $1 AND store = $2`
+
+	stmt2 := `SELECT COUNT(anonymous_id), COUNT(DISTINCT product_id)
+			  FROM visitor
+			  WHERE timestamp < $1 AND timestamp > $2 AND store = $3`
+
+	rows1, err := m.DB.QueryContext(ctx, stmt1, t1, id)
+	if err != nil {
+		return mp, err
+	}
+	defer rows1.Close()
+
+	var gmv, disc int
+	for rows1.Next() {
+		err = rows1.Scan(&gmv, &disc)
+		if err != nil {
+			return mp, err
+		}
+	}
+
+	mp["gmv"] = []int{}
+	mp["discount"] = []int{}
+	mp["gmv"] = append(mp["gmv"], gmv)
+	mp["discount"] = append(mp["discount"], disc)
+
+	rows2, err := m.DB.QueryContext(ctx, stmt2, t1, t2, id)
+	if err != nil {
+		return mp, err
+	}
+	defer rows2.Close()
+
+	for rows1.Next() {
+		err = rows1.Scan(&gmv, &disc)
+		if err != nil {
+			return mp, err
+		}
+	}
+
+	mp["gmv"] = append(mp["gmv"], gmv)
+	mp["discount"] = append(mp["discount"], disc)
+
+	return mp, nil
+}
+
+func (m *postgresDBRepo) GetDealDataFromVisitor(t1 time.Time, t2 time.Time, id int) (map[string][]int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	mp := make(map[string][]int)
+
+	stmt1 := `SELECT COUNT(anonymous_id), COUNT(DISTINCT product_id)
+			  FROM visitor
+			  WHERE timestamp > $1 AND store = $2`
+
+	stmt2 := `SELECT COUNT(anonymous_id), COUNT(DISTINCT product_id)
+			  FROM visitor
+			  WHERE timestamp < $1 AND timestamp > $2 AND store = $3`
+
+	rows1, err := m.DB.QueryContext(ctx, stmt1, t1, id)
+	if err != nil {
+		return mp, err
+	}
+	defer rows1.Close()
+
+	var users, products int
+	for rows1.Next() {
+		err = rows1.Scan(&users, &products)
+		if err != nil {
+			return mp, err
+		}
+	}
+
+	mp["users"] = []int{}
+	mp["products"] = []int{}
+	mp["users"] = append(mp["users"], users)
+	mp["products"] = append(mp["products"], products)
+
+	rows2, err := m.DB.QueryContext(ctx, stmt2, t1, t2, id)
+	if err != nil {
+		return mp, err
+	}
+	defer rows2.Close()
+
+	for rows1.Next() {
+		err = rows1.Scan(&users, &products)
+		if err != nil {
+			return mp, err
+		}
+	}
+
+	mp["users"] = append(mp["users"], users)
+	mp["products"] = append(mp["products"], products)
+
+	return mp, nil
+}
+
+func (m *postgresDBRepo) GetSeriesDataFromCheckout(t time.Time, id int) ([]map[string]int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	gmap := make(map[string]int)
-	pmap := make(map[string]int)
-	umap := make(map[string]int)
 	dmap := make(map[string]int)
+
 	stmt := `SELECT DATE_TRUNC('hour', timestamp) AS interval,
-	COALESCE(SUM(price),0), COALESCE(COUNT(*), 0) ,
-	COALESCE(SUM(deals),0), COALESCE(SUM(dealdiscount*price/100),0)
-	FROM   campaign_product
-	WHERE  storeid = $1
-	AND	  timestamp >= $2
-	GROUP BY interval
-	ORDER BY interval;`
-	rows, err := m.DB.QueryContext(ctx, stmt, id, ts)
+			 COALESCE(SUM(gmv),0), COALESCE(SUM(discount_amount),0)
+			 FROM checkout
+		     WHERE store = $1
+			 AND timestamp >= $2
+			 GROUP BY interval
+			 ORDER BY interval;`
+
+	rows, err := m.DB.QueryContext(ctx, stmt, id, t)
 	if err != nil {
 		return []map[string]int{}, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var t time.Time
-		var g, p, u, d sql.NullInt64
-		err = rows.Scan(&t, &g, &p, &u, &d)
+		var g, d sql.NullInt64
+		err = rows.Scan(&t, &g, &d)
 		if err != nil {
 			return []map[string]int{}, err
 		}
 		gmap[t.Format("2006-01-02 15:04:05")] = int(g.Int64)
-		pmap[t.Format("2006-01-02 15:04:05")] = int(p.Int64)
-		umap[t.Format("2006-01-02 15:04:05")] = int(u.Int64)
 		dmap[t.Format("2006-01-02 15:04:05")] = int(d.Int64)
 	}
 
-	return []map[string]int{gmap, pmap, umap, dmap}, nil
+	return []map[string]int{gmap, dmap}, nil
 }
 
-func (m *postgresDBRepo) GetCampaignByID(id int64) (models.Campaign, error) {
+func (m *postgresDBRepo) GetSeriesDataFromVisitor(t time.Time, id int) ([]map[string]int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	pmap := make(map[string]int)
+	umap := make(map[string]int)
+	stmt := `SELECT DATE_TRUNC('hour', timestamp) AS interval,
+			 COALESCE(COUNT(anonymous_id), 0) ,COALESCE(COUNT(DISTINCT product_id),0)
+			 FROM visitor
+			 WHERE store = $1
+			 AND timestamp >= $2
+			 GROUP BY interval
+			 ORDER BY interval;`
+	rows, err := m.DB.QueryContext(ctx, stmt, id, t)
+	if err != nil {
+		return []map[string]int{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var t time.Time
+		var u, p sql.NullInt64
+		err = rows.Scan(&t, &u, &p)
+		if err != nil {
+			return []map[string]int{}, err
+		}
+		umap[t.Format("2006-01-02 15:04:05")] = int(u.Int64)
+		pmap[t.Format("2006-01-02 15:04:05")] = int(p.Int64)
+	}
+
+	return []map[string]int{umap, pmap}, nil
+}
+
+func (m *postgresDBRepo) GetTopProducts(id int) ([]int64, []int, []int, []int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	prods := []int64{}
+	users := []int{}
+	discounts := []int{}
+	gmv := []int{}
+
+	stmt1 := `SELECT COUNT(anonymous_id) as users, product_id
+			 FROM visitor 
+			 WHERE store = $1
+			 GROUP BY product_id 
+			 ORDER BY users desc limit 5`
+
+	rows, err := m.DB.QueryContext(ctx, stmt1, id)
+	if err != nil {
+		return prods, users, discounts, gmv, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var p, u sql.NullInt64
+
+		err = rows.Scan(&u, &p)
+		if !p.Valid || err != nil {
+			return prods, users, discounts, gmv, err
+		}
+		prods = append(prods, p.Int64)
+		users = append(users, int(u.Int64))
+	}
+
+	stmt2 := ``
+	var rows2 *sql.Rows
+
+	if len(prods) < 5 && len(prods) >= 1 {
+		/* There are less than 5 products, so just diplay the top 1 */
+		stmt2 = `SELECT SUM(gmv), SUM(discount_amount)
+			  	 FROM checkout
+			  	 WHERE store = $1 and product_id = $2`
+		rows2, err = m.DB.QueryContext(ctx, stmt2, id, prods[0])
+		if err != nil {
+			return prods, users, discounts, gmv, err
+		}
+		defer rows2.Close()
+	} else {
+		stmt2 = `SELECT product_id, SUM(gmv) AS total_gmv, SUM(discount_amount) AS total_discount
+				 FROM (
+				 	SELECT
+				 		product_id,
+						gmv,
+						discount_amount,
+						CASE
+							WHEN product_id = $2 THEN 1
+							WHEN product_id = $3 THEN 2
+							WHEN product_id = $4 THEN 3
+							WHEN product_id = $5 THEN 4
+							WHEN product_id = $6 THEN 5
+							ELSE 6  -- This is to handle other product_ids not in the IN clause
+						END AS sort_order
+					FROM checkout
+					WHERE store = $1 and product_id IN ($2, $3, $4, $5, $6)
+				 ) AS subquery
+				 GROUP BY product_id, sort_order
+				 ORDER BY sort_order`
+
+		rows2, err = m.DB.QueryContext(ctx, stmt2, id,
+			prods[0], prods[1], prods[2], prods[3], prods[4])
+		if err != nil {
+			return prods, users, discounts, gmv, err
+		}
+		defer rows2.Close()
+	}
+
+	for rows2.Next() {
+		var p, g, d, s sql.NullInt64
+
+		err = rows.Scan(&p, &g, &d, &s)
+		if !g.Valid || err != nil {
+			return prods, users, discounts, gmv, err
+		}
+		gmv = append(gmv, int(g.Int64))
+		discounts = append(discounts, int(d.Int64))
+	}
+
+	return prods, users, discounts, gmv, nil
+}
+
+func (m *postgresDBRepo) GetAggOtfByDuration(t time.Time, id int) (map[string]int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	otf := make(map[string]int)
+	stmt := `SELECT DATE_TRUNC('hour', timestamp) AS interval,
+			 COALESCE(COUNT(anonymous_id), 0)
+			 FROM visitor
+			 WHERE store = $1
+			 AND timestamp >= $2
+			 GROUP BY interval
+			 ORDER BY interval`
+	rows, err := m.DB.QueryContext(ctx, stmt, id, t)
+	if err != nil {
+		return map[string]int{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var t time.Time
+		var u sql.NullInt64
+		err = rows.Scan(&t, &u)
+		if err != nil {
+			return map[string]int{}, err
+		}
+		otf[t.Format("2006-01-02 15:04:05")] = int(u.Int64)
+	}
+
+	return otf, nil
+}
+
+func (m *postgresDBRepo) GetAllCampaigns(id int) ([]models.Camapign, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	stmt := "select * from campaign where campaignid = $1"
-	j := models.Campaign{}
-	rows, err := m.DB.QueryContext(ctx, stmt, id)
+	stmt := `SELECT
+    		 DATE_TRUNC('day', visitor.timestamp) AS time_window,
+    		 COALESCE(SUM(checkout.discount_amount),0) AS discount,
+			 COALESCE(SUM(checkout.gmv),0) AS gmv,
+			 COALESCE(COUNT(*),0) as users,
+			 COUNT(DISTINCT visitor.product_id) AS products,
+			 AVG(checkout.gmv) AS aov,
+			 COUNT(CASE WHEN visitor.deal_shown = true THEN 1 ELSE NULL END) AS impressions,
+			 COUNT(CASE WHEN visitor.code_copied = true THEN 1 ELSE NULL END) AS promo_copied,
+			 COUNT(CASE WHEN checkout.gmv IS NOT NULL THEN 1 ELSE NULL END) AS conversions
+
+			 FROM visitor LEFT OUTER JOIN checkout
+			 ON visitor.discount_code = checkout.discount_code AND visitor.store = checkout.store
+			 
+			 WHERE visitor.timestamp >= $1 AND visitor.store = $2
+			 
+			 GROUP BY time_window
+			 ORDER BY time_window DESC`
+
+	j := []models.Camapign{}
+
+	t, err := m.GetCampignEndTime(id)
+	t.AddDate(-1, 0, 0)
+	rows, err := m.DB.QueryContext(ctx, stmt, t, id)
 	if err != nil {
 		return j, err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		err = rows.Scan(&j.CampaignID, &j.Store.ID, &j.Timestamp, &j.Discount, &j.ActiveStatus, &j.Misc)
+		var c models.Camapign
+		err = rows.Scan(&c.StartTime, &c.DiscountValue, &c.GmvValue, &c.Users,
+			&c.Products, &c.Aov, &c.Impressions, &c.PromoCopied, &c.Conversions)
 		if err != nil {
 			return j, err
 		}
-	}
-	return j, nil
-}
-
-func (m *postgresDBRepo) ListAllCampaigns(s int) ([]models.Campaign, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	stmt := "select * from campaign where storeid = $1"
-	j := []models.Campaign{}
-	rows, err := m.DB.QueryContext(ctx, stmt, s)
-	if err != nil {
-		return j, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var c models.Campaign
-		err = rows.Scan(&c.CampaignID, &c.Store.ID, &c.Timestamp, &c.Discount, &c.ActiveStatus, &c.Misc)
-		if err != nil {
-			return j, err
-		}
-		st, err := m.GetStoreByID(c.Store.ID)
-		if err != nil {
-			return j, err
-		}
-		c.Store = st
 		j = append(j, c)
 	}
 
 	return j, nil
 }
+
+// Start here next
 
 /* Table "public.users"
 	Column   |   Type
