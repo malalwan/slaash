@@ -42,8 +42,16 @@ func NewHandlers(m *Repository) {
 }
 
 func (m *Repository) TestSession(w http.ResponseWriter, r *http.Request) {
-	user := m.App.Session.Get(r.Context(), "user").(models.User)
-	store := user.Store
+	user := m.App.Session.Get(r.Context(), "user").(models.Users)
+	storeid := user.Store
+
+	store, err := m.DB.GetStoreByID(storeid)
+
+	if err != nil {
+		m.App.ErrorLog.Println("Ma chudi padi hai")
+		helpers.ServerError(w, err)
+	}
+
 	fmt.Printf("user.FirstName: %v\n", user.FirstName)
 	fmt.Printf("user.LastName: %v\n", user.LastName)
 	fmt.Printf("store.ApiToken: %v\n", store.ApiToken)
@@ -115,7 +123,7 @@ Output: Ack on DB Set and Email Queued
 */
 
 func (m *Repository) TurnOffDealList(w http.ResponseWriter, r *http.Request) {
-	user := m.App.Session.Get(r.Context(), "user").(models.User)
+	user := m.App.Session.Get(r.Context(), "user").(models.Users)
 	storeid := user.Store
 	err := m.DB.StopDealList(storeid)
 	if err != nil {
@@ -125,7 +133,7 @@ func (m *Repository) TurnOffDealList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Repository) TurnOffNextCampaign(w http.ResponseWriter, r *http.Request) {
-	user := m.App.Session.Get(r.Context(), "user").(models.User)
+	user := m.App.Session.Get(r.Context(), "user").(models.Users)
 	storeid := user.Store
 	err := m.DB.SetTurnOffTime(storeid)
 	if err != nil {
@@ -135,7 +143,7 @@ func (m *Repository) TurnOffNextCampaign(w http.ResponseWriter, r *http.Request)
 }
 
 func (m *Repository) GetCampaignActivity(w http.ResponseWriter, r *http.Request) {
-	user := m.App.Session.Get(r.Context(), "user").(models.User)
+	user := m.App.Session.Get(r.Context(), "user").(models.Users)
 	storeid := user.Store
 	endTime, err := m.DB.GetCampignEndTime(storeid) // call to store
 	if err != nil {
@@ -164,14 +172,27 @@ func (m *Repository) GetCampaignActivity(w http.ResponseWriter, r *http.Request)
 	data.GmvActiveSession.CurrencyType = store.Currency
 	data.GmvActiveSession.Value = money["gmv"][0]
 	data.GmvActiveSession.GmvVertical.Positive = money["gmv"][0] >= money["gmv"][1]
-	data.GmvActiveSession.GmvVertical.ChangePercentage = (float32(money["gmv"][0]-money["gmv"][1]) / float32(money["gmv"][1])) * 100
+	if money["gmv"][1] == 0 {
+		data.GmvActiveSession.GmvVertical.ChangePercentage = 0
+	} else {
+		data.GmvActiveSession.GmvVertical.ChangePercentage = (float32(money["gmv"][0]-money["gmv"][1]) / float32(money["gmv"][1])) * 100
+	}
 	data.ProductsActiveSession.Products = stats["products"][0]
 	data.ProductsActiveSession.ProductsVertical.Positive = stats["products"][0] >= stats["products"][1]
-	data.ProductsActiveSession.ProductsVertical.ChangePercentage = (float32(stats["products"][0]-stats["products"][1]) / float32(stats["products"][1])) * 100
+	if stats["products"][1] == 0 {
+		data.ProductsActiveSession.ProductsVertical.ChangePercentage = 0
+	} else {
+		data.ProductsActiveSession.ProductsVertical.ChangePercentage = (float32(stats["products"][0]-stats["products"][1]) / float32(stats["products"][1])) * 100
+	}
 	data.ActiveUsers.ActiveUsersInSession = stats["users"][0]
 	data.ActiveUsers.ActiveUsersVertical.Positive = stats["users"][0] >= stats["users"][1]
-	data.ActiveUsers.ActiveUsersVertical.ChangePercentage = (float32(stats["users"][0]-stats["users"][1]) / float32(stats["users"][1])) * 100
+	if stats["users"][1] == 0 {
+		data.ActiveUsers.ActiveUsersVertical.ChangePercentage = 0
+	} else {
+		data.ActiveUsers.ActiveUsersVertical.ChangePercentage = (float32(stats["users"][0]-stats["users"][1]) / float32(stats["users"][1])) * 100
+	}
 
+	m.App.InfoLog.Println(data)
 	// Marshal the map into a JSON string
 	jsonData, err := json.Marshal(data)
 	if err != nil {
@@ -182,7 +203,7 @@ func (m *Repository) GetCampaignActivity(w http.ResponseWriter, r *http.Request)
 }
 
 func (m *Repository) GetDealListActivity(w http.ResponseWriter, r *http.Request) {
-	user := m.App.Session.Get(r.Context(), "user").(models.User)
+	user := m.App.Session.Get(r.Context(), "user").(models.Users)
 	storeid := user.Store
 
 	body, err := io.ReadAll(r.Body)
@@ -244,17 +265,32 @@ func (m *Repository) GetDealListActivity(w http.ResponseWriter, r *http.Request)
 
 	stats.DiscountSpends.Price = money["discount"][0]
 	stats.DiscountSpends.DiscountSpendsVertical.DiscountSpendsVertical = money["discount"][0] > money["discount"][1]
-	stats.DiscountSpends.DiscountSpendsVertical.VerticalVal = (float32(money["discount"][0]-money["discount"][1]) / float32(money["discount"][1])) * 100
+	if money["discount"][1] == 0 {
+		stats.DiscountSpends.DiscountSpendsVertical.VerticalVal = 0
+	} else {
+		stats.DiscountSpends.DiscountSpendsVertical.VerticalVal = (float32(money["discount"][0]-money["discount"][1]) / float32(money["discount"][1])) * 100
+	}
 	stats.Gmv.Price = money["gmv"][0]
 	stats.Gmv.GmvVertical.GmvVertical = money["gmv"][0] >= money["gmv"][1]
-	stats.Gmv.GmvVertical.VerticalVal = (float32(money["gmv"][0]-money["gmv"][1]) / float32(money["gmv"][1])) * 100
+	if money["gmv"][1] == 0 {
+		stats.Gmv.GmvVertical.VerticalVal = 0
+	} else {
+		stats.Gmv.GmvVertical.VerticalVal = (float32(money["gmv"][0]-money["gmv"][1]) / float32(money["gmv"][1])) * 100
+	}
 	stats.Products.Price = data["products"][0]
 	stats.Products.ProductsVertical.ProductsVertical = data["products"][0] >= data["products"][1]
-	stats.Products.ProductsVertical.VerticalVal = (float32(data["products"][0]-data["products"][1]) / float32(data["products"][1])) * 100
+	if data["products"][1] == 0 {
+		stats.Products.ProductsVertical.VerticalVal = 0
+	} else {
+		stats.Products.ProductsVertical.VerticalVal = (float32(data["products"][0]-data["products"][1]) / float32(data["products"][1])) * 100
+	}
 	stats.Users.Price = data["users"][0]
 	stats.Users.UsersVertical.UsersVertical = data["users"][0] >= data["users"][1]
-	stats.Users.UsersVertical.VerticalVal = (float32(data["users"][0]-data["users"][1]) / float32(data["users"][1])) * 100
-
+	if data["users"][1] == 0 {
+		stats.Users.UsersVertical.VerticalVal = 0
+	} else {
+		stats.Users.UsersVertical.VerticalVal = (float32(data["users"][0]-data["users"][1]) / float32(data["users"][1])) * 100
+	}
 	stats.GmvData = moneySeries[0]
 	stats.DiscountsData = moneySeries[1]
 	stats.ProductsData = dataSeries[1]
@@ -270,7 +306,7 @@ func (m *Repository) GetDealListActivity(w http.ResponseWriter, r *http.Request)
 
 func (m *Repository) GetTrendingProducts(w http.ResponseWriter, r *http.Request) {
 	/* Initialize the function with the user and store context from the session */
-	user := m.App.Session.Get(r.Context(), "user").(models.User)
+	user := m.App.Session.Get(r.Context(), "user").(models.Users)
 	storeid := user.Store
 
 	/* DB API to fetch the most added products by end customers */
@@ -328,7 +364,7 @@ func (m *Repository) GetTrendingProducts(w http.ResponseWriter, r *http.Request)
 }
 
 func (m *Repository) GetOtfVisitorData(w http.ResponseWriter, r *http.Request) {
-	user := m.App.Session.Get(r.Context(), "user").(models.User)
+	user := m.App.Session.Get(r.Context(), "user").(models.Users)
 	storeid := user.Store
 
 	body, err := io.ReadAll(r.Body)
@@ -376,7 +412,7 @@ func (m *Repository) GetOtfVisitorData(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Repository) GetAllCampaigns(w http.ResponseWriter, r *http.Request) {
-	user := m.App.Session.Get(r.Context(), "user").(models.User)
+	user := m.App.Session.Get(r.Context(), "user").(models.Users)
 	storeid := user.Store
 
 	campaigns, err := m.DB.GetAllCampaigns(storeid)
@@ -395,8 +431,10 @@ func (m *Repository) GetAllCampaigns(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Repository) ConfigureDiscounts(w http.ResponseWriter, r *http.Request) {
-	user := m.App.Session.Get(r.Context(), "user").(models.User)
+	user := m.App.Session.Get(r.Context(), "user").(models.Users)
 	storeid := user.Store
+
+	fmt.Println(storeid)
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -417,18 +455,47 @@ func (m *Repository) ConfigureDiscounts(w http.ResponseWriter, r *http.Request) 
 }
 
 func (m *Repository) ConfigureDealList(w http.ResponseWriter, r *http.Request) {
-	user := m.App.Session.Get(r.Context(), "user").(models.User)
+	user := m.App.Session.Get(r.Context(), "user").(models.Users)
 	storeid := user.Store
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	var requestBody struct {
+		MaxDiscount int8   `json:"max_discount"`
+		PopupColor  string `json:"popup_color"`
+		ButtonStyle int8   `json:"button_style"`
+		ButtonColor string `json:"button_color"`
+	}
+
+	if err := json.Unmarshal(body, &requestBody); err != nil {
+		http.Error(w, "Failed to parse JSON", http.StatusBadRequest)
+		m.App.ErrorLog.Println(err)
+		return
+	}
+
+	err = m.DB.UpdateDealListConfig(storeid, requestBody.MaxDiscount,
+		requestBody.PopupColor, requestBody.ButtonStyle, requestBody.ButtonColor)
+	if err != nil {
+		m.App.ErrorLog.Println("Deal list turn off failed!")
+		helpers.ServerError(w, err)
+	}
+
 }
 
 func (m *Repository) UpdateUserProfile(w http.ResponseWriter, r *http.Request) {
-	user := m.App.Session.Get(r.Context(), "user").(models.User)
+	user := m.App.Session.Get(r.Context(), "user").(models.Users)
 	storeid := user.Store
+	fmt.Println(storeid)
 }
 
 func (m *Repository) UpdatePassword(w http.ResponseWriter, r *http.Request) {
-	user := m.App.Session.Get(r.Context(), "user").(models.User)
+	user := m.App.Session.Get(r.Context(), "user").(models.Users)
 	storeid := user.Store
+	fmt.Println(storeid)
 }
 
 func (m *Repository) GetOtfUserInfo(w http.ResponseWriter, r *http.Request) {

@@ -17,7 +17,7 @@ type Store struct {
 	DefaultDiscount     int8      // configured on discounts section
 	DiscountCateogry    int8      // configured on the discounts section
 	MaxDiscountforPopup int8      // this value will be used to lure on the popup
-	DealListButtonStyle int8      // configured on the deal list
+	ButtonStyle         int8      // configured on the deal list
 	CampaginRenewalTime time.Time // only hour:min:sec matter
 	CampaignTurnOffTime time.Time // add 1 day and then close camapaign for that day until renewal
 	DealListActive      bool      // global deal list toggle
@@ -25,7 +25,7 @@ type Store struct {
 }
 
 /* User stores the information of the person accessing the dashboard */
-type User struct {
+type Users struct {
 	FirstName   string    //
 	LastName    string    //
 	Email       string    //
@@ -83,7 +83,7 @@ type Product struct {
 }
 
 /* CollectionDiscounts is used to store discount codes and inputs specific to collection type */
-type CollectionDiscounts struct {
+type Collection struct {
 	Store              int   // store id
 	CollectionID       int64 //check in shopify
 	DiscountPercentage int8  // percentage configured

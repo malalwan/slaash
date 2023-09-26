@@ -41,14 +41,16 @@ func Auth(next http.Handler) http.Handler {
 
 func AddTestStoreToSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var user models.User
-		user.ID = 0
+		var user models.Users
 		user.Email = "tester@slaash.it"
 		user.FirstName = "Slaash"
 		user.LastName = "Tester"
-		user.Store.ID = 1
-		user.Store.ApiToken = "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"
-		user.Store.Name = "spend-more-money.myshopify.com"
+		user.Store = 1
+		user.AccessLevel = 1
+		user.Misc = "Test user for Slaash"
+		// user.Password = "test"
+		//user.Store.ApiToken = "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"
+		//user.Store.Name = "spend-more-money.myshopify.com"
 
 		session.Put(r.Context(), "user", user)
 		app.InfoLog.Println("Test store added to the session")
