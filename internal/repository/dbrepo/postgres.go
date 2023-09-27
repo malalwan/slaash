@@ -9,26 +9,15 @@ import (
 	"github.com/malalwan/slaash/internal/models"
 )
 
-/* Table "public.campaign"
-    Column    |  Type
---------------+--------
- campaignid   | integer
- storeid      | integer
- timestamp    | timestamp without time zone
- discount     | integer
- activestatus | integer
- misc         | text
-*/
-
-func (m *postgresDBRepo) StopDealList(id int) error {
+func (m *postgresDBRepo) ToggleDealList(id int, t bool) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	stmt := `UPDATE store
-	 	 	 SET deal_list_active = FALSE
+	 	 	 SET deal_list_active = $2
 	 	 	 WHERE id = $1`
 
-	_, err := m.DB.ExecContext(ctx, stmt, id)
+	_, err := m.DB.ExecContext(ctx, stmt, id, t)
 	if err != nil {
 		m.App.ErrorLog.Println("DB insertion failed")
 		return err
@@ -528,7 +517,7 @@ func (m *postgresDBRepo) GetAggOtfByDuration(t time.Time, id int) (map[string]in
 	return otf, nil
 }
 
-func (m *postgresDBRepo) GetAllCampaigns(id int) ([]models.Camapign, error) {
+func (m *postgresDBRepo) GetAllCampaigns(id int) ([]models.Campaign, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
@@ -551,7 +540,7 @@ func (m *postgresDBRepo) GetAllCampaigns(id int) ([]models.Camapign, error) {
 			 GROUP BY time_window
 			 ORDER BY time_window DESC`
 
-	j := []models.Camapign{}
+	j := []models.Campaign{}
 
 	t, err := m.GetCampignEndTime(id)
 	t.AddDate(-1, 0, 0)
@@ -561,7 +550,7 @@ func (m *postgresDBRepo) GetAllCampaigns(id int) ([]models.Camapign, error) {
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var c models.Camapign
+		var c models.Campaign
 		err = rows.Scan(&c.StartTime, &c.DiscountValue, &c.GmvValue, &c.Users,
 			&c.Products, &c.Aov, &c.Impressions, &c.PromoCopied, &c.Conversions)
 		if err != nil {
@@ -615,378 +604,172 @@ func (m *postgresDBRepo) GetStoreByID(id int) (models.Store, error) {
 	return j, nil
 }
 
-// // START HERE
+func (m *postgresDBRepo) GetDefaultDiscountAndCategory(id int) (int8, int8, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
 
-// /* Table "public.users"
-// 	Column   |   Type
-// -------------+-----------
-//  id          | integer
-//  firstname   | text
-//  lastname    | text
-//  email       | text
-//  password    | text
-//  accesslevel | integer
-//  createdat   | timestamp without time zone
-//  updatedat   | timestamp without time zone
-//  storeid     | integer
-// */
+	stmt := `SELECT default_discount, discount_category  
+			 FROM store 
+			 WHERE id = $1`
 
-// func (m *postgresDBRepo) CreateUser(u models.User) error {
-// 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-// 	defer cancel()
+	var dd, dc int8
 
-// 	stmt := `insert into users
-// 				(firstname, lastname, email, password,
-// 				accesslevel, createdat, updatedat, storeid)
-// 			 values
-// 			 	($1, $2, $3, $4, $5, $6, $7, $8)`
+	rows, err := m.DB.QueryContext(ctx, stmt, id)
+	if err != nil {
+		return dd, dc, err
+	}
 
-// 	_, err := m.DB.ExecContext(ctx, stmt, u.FirstName, u.LastName, u.Email,
-// 		u.Password, u.AccessLevel, u.CreatedAt,
-// 		u.UpdatedAt, u.Store.ID)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	return nil
-// }
+	defer rows.Close()
 
-// func (m *postgresDBRepo) UpdateUser(u models.User) (models.User, error) {
-// 	return models.User{}, nil
-// }
+	for rows.Next() {
+		err = rows.Scan(&dd, &dc)
+		if err != nil {
+			return dd, dc, err
+		}
+	}
+	return dd, dc, nil
+}
 
-// func (m *postgresDBRepo) GetUserByStore(storeid int) (models.User, error) {
-// 	return models.User{}, nil
-// }
+func (m *postgresDBRepo) GetConfiguredDiscounts(id int, cat int8) (map[int64]int8, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
 
-// /* Table "public.price_rule"
-//       Column       |  Type
-// -------------------+--------
-//  id                | integer
-//  targettype        | text
-//  targetselection   | text
-//  valuetype         | text
-//  value             | numeric
-//  customerselection | text
-//  allocationmethod  | text
-//  startsat          | timestamp without time zone
-// */
+	stmt := ``
+	var mp map[int64]int8
+	switch cat {
+	case 2:
+		stmt = `SELECT product_id, discount_percentage
+				FROM product
+				WHERE store = $1`
+	case 3:
+		stmt = `SELECT collection_id, discount_percentage
+				FROM collection
+				WHERE store = $1`
+	}
 
-// func (m *postgresDBRepo) CreatePr(pr models.PriceRule) error {
-// 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-// 	defer cancel()
+	rows, err := m.DB.QueryContext(ctx, stmt, id)
+	if err != nil {
+		return mp, err
+	}
 
-// 	stmt := `insert into price_rule
-// 				(prid, targettype, targetselection, valuetype,
-// 				value, customerselection, allocationmethod, startsat)
-// 			 values
-// 			 	($1, $2, $3, $4, $5, $6, $7, $8)`
+	defer rows.Close()
 
-// 	_, err := m.DB.ExecContext(ctx, stmt, pr.ID, pr.TargetType, pr.TargetSelection,
-// 		pr.ValueType, pr.Value, pr.CustomerSelection, pr.AllocationMethod, pr.StartsAt)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	return nil
-// }
+	for rows.Next() {
+		var ident sql.NullInt64
+		var perc sql.NullInt16
+		err = rows.Scan(&ident, &perc)
+		if err != nil {
+			return mp, err
+		}
+		if ident.Valid && perc.Valid {
+			mp[ident.Int64] = int8(perc.Int16)
+		}
+	}
+	return mp, nil
+}
 
-// func (m *postgresDBRepo) DeletePr(pr models.PriceRule) error {
-// 	return nil
-// }
-// func (m *postgresDBRepo) GetPrById(id int64, storeid int) (models.PriceRule, error) {
-// 	return models.PriceRule{}, nil
-// }
-// func (m *postgresDBRepo) ListPr(storeid int) ([]models.PriceRule, error) {
-// 	return []models.PriceRule{}, nil
-// }
+func (m *postgresDBRepo) GetDealListInfo(id int) (models.DlInfo, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
 
-// /* Table "public.discount_code"
-// 	Column   |   Type
-//  ------------+-----------
-//  id          | integer
-//  priceruleid | integer
-//  code        | text
-//  usagecount  | integer
-//  createdat   | timestamp without time zone
-//  updatedat   | timestamp without time zone
-// */
+	var info models.DlInfo
 
-// func (m *postgresDBRepo) CreateDiscountCode(d models.DiscountCode) error {
-// 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-// 	defer cancel()
+	stmt := `SELECT max_discount_for_popup, popup_color_code, button_style, button_color_code
+			 FROM store
+			 WHERE id = $1`
 
-// 	stmt := `insert into discount_code
-// 				(priceruleId, code, usagecount,
-// 				createdat, updatedat)
-// 			 values
-// 			 	($1, $2, $3, $4, $5)`
+	rows, err := m.DB.QueryContext(ctx, stmt, id)
+	if err != nil {
+		return info, err
+	}
 
-// 	_, err := m.DB.ExecContext(ctx, stmt, d.PriceRuleID, d.Code,
-// 		d.UsageCount, d.Timestamp, d.Timestamp)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	return nil
-// }
+	defer rows.Close()
 
-// func (m *postgresDBRepo) DeleteDiscountCode(d models.DiscountCode) error {
-// 	return nil
-// }
+	for rows.Next() {
+		var pc, bc sql.NullString
+		var md, bs sql.NullInt16
+		err = rows.Scan(&md, &pc, &bs, &bc)
+		if err != nil {
+			return info, err
+		}
+		if md.Valid && pc.Valid && bs.Valid && bc.Valid {
+			info.MaxDiscount = int8(md.Int16)
+			info.ButtonStyle = int8(bs.Int16)
+			info.PopupColor = pc.String
+			info.ButtonColor = bc.String
+		}
+	}
+	return info, nil
+}
 
-// func (m *postgresDBRepo) GetDiscountsByPr(pr models.PriceRule) ([]models.DiscountCode, error) {
-// 	return []models.DiscountCode{}, nil
-// }
+func (m *postgresDBRepo) GetUserProfileInfo(id int) (models.UserProfile, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
 
-// /* Table "public.buyer"
-//    Column    |  Type
-// -------------+--------
-//  anonymousid | integer
-//  email       | text
-//  storeid     | integer
-//  productid   | integer
-//  timestamp   | timestamp without time zone
-//  gotdeal     | boolean
-//  clickeddeal | boolean
-//  cpid        | integer
-//  misc        | text
-// */
+	var info models.UserProfile
 
-// func (m *postgresDBRepo) CreateBuyer(b models.Buyer) error {
-// 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-// 	defer cancel()
+	stmt := `SELECT first_name, last_name, photo
+			 FROM users
+			 WHERE id = $1`
 
-// 	stmt := `insert into buyer
-// 				(anonymousid, email, storeid, productid,
-// 					timestamp, gotdeal, clickeddeal, cpid, misc)
-// 			 values
-// 			 	($1, $2, $3, $4, $5, $6, $7, $8, $9)`
+	rows, err := m.DB.QueryContext(ctx, stmt, id)
+	if err != nil {
+		return info, err
+	}
 
-// 	_, err := m.DB.ExecContext(ctx, stmt, b.AnonymousID, b.Email,
-// 		b.Store.ID, b.ProductId, b.Timestamp, b.GotDeal, b.ClickedDeal,
-// 		b.CPID, b.Misc)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	return nil
-// }
+	defer rows.Close()
 
-// func (m *postgresDBRepo) GetBuyersByStore(storeid int) ([]models.Buyer, error) {
-// 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-// 	defer cancel()
+	for rows.Next() {
+		var fn, ln, p sql.NullString
+		err = rows.Scan(&fn, &ln, &p)
+		if err != nil {
+			return info, err
+		}
+		if fn.Valid && ln.Valid && p.Valid {
+			info.FirstName = fn.String
+			info.LastName = ln.String
+			info.PhotoURL = p.String
+		}
+	}
+	return info, nil
+}
 
-// 	stmt := "select * from buyer where storeid = $1"
-// 	j := []models.Buyer{}
-// 	rows, err := m.DB.QueryContext(ctx, stmt, storeid)
-// 	if err != nil {
-// 		return j, err
-// 	}
-// 	defer rows.Close()
-// 	for rows.Next() {
-// 		var b models.Buyer
-// 		err = rows.Scan(&b.AnonymousID, &b.Email, &b.Store.ID, &b.ProductId,
-// 			&b.Timestamp, &b.GotDeal, &b.ClickedDeal, &b.CPID, &b.Misc)
-// 		if err != nil {
-// 			return j, err
-// 		}
-// 		j = append(j, b)
-// 	}
-// 	return j, nil
-// }
+func (m *postgresDBRepo) UpdateDiscounts(id int, dc int8, mp map[int64]int8) error {
+	//ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	//defer cancel()
 
-// func (m *postgresDBRepo) UpdateBuyer(b models.Buyer) (models.Buyer, error) {
-// 	return models.Buyer{}, nil
-// }
+	return nil
+	// isme naya kaam hai, dimaag lagaana hai
+}
 
-// func (m *postgresDBRepo) GetAggregateOtfByDuration(ts time.Time, typ string, id int) (map[string]int, error) {
-// 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-// 	defer cancel()
-// 	otfMap := map[string]int{}
+func (m *postgresDBRepo) UpdateDiscountDefaults(id int, def int8, cat int8) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
 
-// 	stmt := `SELECT DATE_TRUNC('hour', timestamp) AS interval,
-// 	COALESCE(COUNT(*), 0)
-// 	FROM   buyer
-// 	WHERE  storeid = $1
-// 	AND	  timestamp >= $2
-// 	GROUP BY interval
-// 	ORDER BY interval;`
-// 	rows, err := m.DB.QueryContext(ctx, stmt, id, ts)
-// 	if err != nil {
-// 		return otfMap, err
-// 	}
-// 	defer rows.Close()
-// 	for rows.Next() {
-// 		var t time.Time
-// 		var otf sql.NullInt64
-// 		err = rows.Scan(&t, &otf)
-// 		if err != nil {
-// 			return otfMap, err
-// 		}
-// 		otfMap[t.Format("2006-01-02 15:04:05")] = int(otf.Int64)
-// 	}
+	stmt := `UPDATE store
+			 SET default_discount = $2, discount_category = $3
+			 WHERE id = $1`
 
-// 	return otfMap, nil
-// }
+	_, err := m.DB.ExecContext(ctx, stmt, id, def, cat)
+	if err != nil {
+		m.App.ErrorLog.Println("DB insertion failed")
+		return err
+	}
+	return nil
+}
 
-// /* Table "public.store"
-//     Column    |  Type
-// --------------+--------
-//  id           | integer
-//  name         | text
-//  apitoken     | text
-//  refreshtoken | text
-//  misc         | text
-//  url          | text
-// */
+func (m *postgresDBRepo) UpdateUserProfile(id int, fn string, ln string, p string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
 
-// func (m *postgresDBRepo) CreateStore(s models.Store) error {
-// 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-// 	defer cancel()
+	stmt := `UPDATE store
+			 SET first_name = $2, last_name = $3, photo = $4
+			 WHERE id = $1`
 
-// 	stmt := `insert into store
-// 				(name, apitoken, refreshtoken,
-// 				misc, url)
-// 			 values
-// 			 	($1, $2, $3, $4, $5)`
-
-// 	_, err := m.DB.ExecContext(ctx, stmt, s.Name, s.ApiToken,
-// 		s.RefreshToken, s.Misc, s.URL)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	return nil
-// }
-
-// func (m *postgresDBRepo) GetStoreByID(id int) (models.Store, error) {
-// 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-// 	defer cancel()
-
-// 	stmt := "select * from store where id = $1"
-// 	j := models.Store{}
-// 	rows, err := m.DB.QueryContext(ctx, stmt, id)
-// 	if err != nil {
-// 		return j, err
-// 	}
-// 	defer rows.Close()
-// 	for rows.Next() {
-// 		err = rows.Scan(&j.ID, &j.Name, &j.ApiToken, &j.RefreshToken, &j.Misc, &j.URL)
-// 		if err != nil {
-// 			return j, err
-// 		}
-// 	}
-// 	return j, nil
-// }
-
-// func (m *postgresDBRepo) UpdateStore(s models.Store) (models.Store, error) {
-// 	return models.Store{}, nil
-// }
-
-// /* Table "public.campaign_product"
-//     Column    |  Type
-// --------------+--------
-//  id           | integer
-//  campaignid   | integer
-//  productid    | integer
-//  title        | text
-//  storeid      | integer
-//  deals        | integer
-//  sold         | integer
-//  dealdiscount | integer
-//  emailsentto  | text[]
-//  misc         | text
-//  priceruleid  | integer
-//  timestamp    | timestamp without time zone
-//  price        | integer
-// */
-
-// func (m *postgresDBRepo) CreateCampaignProduct(cp models.CampaignProduct) error {
-// 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-// 	defer cancel()
-
-// 	stmt := `insert into campaign_product
-// 				(campaignid, productid, title, storeid,
-// 				deals, sold, dealdiscount, misc,
-// 				timestamp, price)
-// 			 values
-// 			 	($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
-
-// 	_, err := m.DB.ExecContext(ctx, stmt, cp.CampaignID, cp.ProductID,
-// 		cp.Title, cp.Store.ID, cp.Deals, cp.Sold, cp.DealDiscount,
-// 		cp.Misc, cp.Timestamp, cp.Price)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	return nil
-// }
-
-// func (m *postgresDBRepo) GetCampaignProducts(c int64) ([]models.CampaignProduct, error) {
-// 	// pull all campaign products with the given campaing ID from DB
-// 	/* SELECT *
-// 	FROM campaign_product
-// 	WHERE CampaignID = 1;
-// 	*/
-// 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-// 	defer cancel()
-
-// 	stmt := `select * from campaign_product where
-// 			campaignid = $1`
-
-// 	rows, err := m.DB.QueryContext(ctx, stmt, c)
-// 	if err != nil {
-// 		return []models.CampaignProduct{}, err
-// 	}
-// 	defer rows.Close()
-
-// 	var campaignProducts []models.CampaignProduct
-
-// 	for rows.Next() {
-// 		var cp models.CampaignProduct
-// 		err := rows.Scan(&cp.ID, &cp.CampaignID, &cp.ProductID, &cp.Title,
-// 			&cp.Store.ID, &cp.Deals, &cp.Sold, &cp.DealDiscount,
-// 			&cp.EmailSentTo, &cp.Misc, &cp.PriceRuleID)
-// 		if err != nil {
-// 			return campaignProducts, err
-// 		}
-// 		campaignProducts = append(campaignProducts, cp)
-// 	}
-// 	if err := rows.Err(); err != nil {
-// 		return campaignProducts, err
-// 	}
-
-// 	return campaignProducts, nil
-// }
-
-// func (m *postgresDBRepo) UpdateCampaignProducts(c models.Campaign, dict map[string]interface{}) ([]models.CampaignProduct, error) {
-// 	return []models.CampaignProduct{}, nil
-// }
-
-// func (m *postgresDBRepo) GetTopProductsByStore(s int) ([]models.CampaignProduct, error) {
-// 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-// 	defer cancel()
-// 	/* SELECT * FROM products
-// 	ORDER BY price ASC
-// 	LIMIT 5;
-// 	*/
-// 	products := []models.CampaignProduct{}
-// 	stmt := `select productid, deals, dealdiscount, price
-// 	from campaign_product where storeid = $1 order by deals desc limit 5`
-// 	rows, err := m.DB.QueryContext(ctx, stmt, s)
-// 	if err != nil {
-// 		return products, err
-// 	}
-// 	defer rows.Close()
-// 	for rows.Next() {
-// 		var pid, d, dd, p sql.NullInt64
-
-// 		err = rows.Scan(&pid, &d, &dd, &p)
-// 		if !pid.Valid || err != nil {
-// 			return products, err
-// 		}
-// 		var c models.CampaignProduct
-// 		c.ProductID = pid.Int64
-// 		c.Deals = int(d.Int64)
-// 		c.DealDiscount = int(dd.Int64)
-// 		c.Price = int(p.Int64)
-// 		products = append(products, c)
-// 	}
-
-// 	return products, nil
-// }
+	_, err := m.DB.ExecContext(ctx, stmt, id, fn, ln, p)
+	if err != nil {
+		m.App.ErrorLog.Println("DB insertion failed")
+		return err
+	}
+	return nil
+}

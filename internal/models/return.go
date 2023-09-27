@@ -102,6 +102,25 @@ type OtfResponse struct {
 	Otf map[string]int
 }
 
+type Discounts struct {
+	DefaultDiscount  int8
+	DiscountCategory int8
+	DisccoutMap      map[int64]int8
+}
+
+type DlInfo struct {
+	MaxDiscount int8
+	PopupColor  string
+	ButtonStyle int8
+	ButtonColor string
+}
+
+type UserProfile struct {
+	FirstName string
+	LastName  string
+	PhotoURL  string
+}
+
 /* VisitTable is the mapping for OTF algorithm and is used to cache that info in Postgres */
 type VisitTable struct {
 	AnonymousID      string
@@ -128,7 +147,7 @@ type VisitTable struct {
 	FavPage          string
 }
 
-type Camapign struct {
+type Campaign struct {
 	StartTime             time.Time
 	EndTime               time.Time
 	DiscountValue         float32

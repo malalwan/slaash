@@ -23,7 +23,7 @@ func routes(app *config.AppConfig) http.Handler {
 	mux.Get("/test", handlers.Repo.TestSession)                           // Tests if the stack is stitched
 	mux.Get("/", handlers.Repo.Login)                                     // login for a registered guy and oauth2 for a non-one
 	mux.Get("/{loginAction}", handlers.Repo.ShopifyLogin)                 // api call for auth
-	mux.Get("/turn_off_deal_list", handlers.Repo.TurnOffDealList)         // request to turn off deal list
+	mux.Get("/turn_off_deal_list", handlers.Repo.ToggleDealList)          // request to turn off deal list
 	mux.Get("/turn_off_next_campaign", handlers.Repo.TurnOffNextCampaign) // turns off the campaign for next day only
 	mux.Get("/campaign_activity", handlers.Repo.GetCampaignActivity)      // api to send active campaign activity
 	mux.Get("/deallist_activity", handlers.Repo.GetDealListActivity)      // api to send overall deal list activity

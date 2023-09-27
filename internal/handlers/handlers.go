@@ -122,10 +122,25 @@ Input: Session Info : Users, Store
 Output: Ack on DB Set and Email Queued
 */
 
-func (m *Repository) TurnOffDealList(w http.ResponseWriter, r *http.Request) {
+func (m *Repository) ToggleDealList(w http.ResponseWriter, r *http.Request) {
 	user := m.App.Session.Get(r.Context(), "user").(models.Users)
 	storeid := user.Store
-	err := m.DB.StopDealList(storeid)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	var requestBody struct {
+		Toggle bool `json:"toggle"`
+	}
+
+	if err := json.Unmarshal(body, &requestBody); err != nil {
+		http.Error(w, "Failed to parse JSON", http.StatusBadRequest)
+		m.App.ErrorLog.Println(err)
+		return
+	}
+	err = m.DB.ToggleDealList(storeid, requestBody.Toggle)
 	if err != nil {
 		m.App.ErrorLog.Println("Deal list turn off failed!")
 		helpers.ServerError(w, err)
@@ -430,11 +445,74 @@ func (m *Repository) GetAllCampaigns(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "%s\n", jsonData)
 }
 
-func (m *Repository) ConfigureDiscounts(w http.ResponseWriter, r *http.Request) {
+func (m *Repository) GetAllDiscounts(w http.ResponseWriter, r *http.Request) {
 	user := m.App.Session.Get(r.Context(), "user").(models.Users)
 	storeid := user.Store
 
-	fmt.Println(storeid)
+	def, cat, err := m.DB.GetDefaultDiscountAndCategory(storeid)
+	if err != nil {
+		m.App.ErrorLog.Println("Unable to get default discount and category")
+		helpers.ServerError(w, err)
+	}
+	discounts, err := m.DB.GetConfiguredDiscounts(storeid, cat)
+	if err != nil {
+		m.App.ErrorLog.Println("Unable to get discounts")
+		helpers.ServerError(w, err)
+	}
+	var stats models.Discounts
+	stats.DefaultDiscount = def
+	stats.DiscountCategory = cat
+	stats.DisccoutMap = discounts
+
+	jsonData, err := json.Marshal(stats)
+	if err != nil {
+		m.App.ErrorLog.Println(err)
+		helpers.ServerError(w, err)
+		return
+	}
+
+	fmt.Fprintf(w, "%s\n", jsonData)
+}
+
+func (m *Repository) GetDealListInfo(w http.ResponseWriter, r *http.Request) {
+	user := m.App.Session.Get(r.Context(), "user").(models.Users)
+	storeid := user.Store
+
+	dlInfo, err := m.DB.GetDealListInfo(storeid)
+	if err != nil {
+		m.App.ErrorLog.Println("Unable to fetch deal list info")
+	}
+	jsonData, err := json.Marshal(dlInfo)
+	if err != nil {
+		m.App.ErrorLog.Println(err)
+		helpers.ServerError(w, err)
+		return
+	}
+
+	fmt.Fprintf(w, "%s\n", jsonData)
+}
+
+func (m *Repository) GetUserProfile(w http.ResponseWriter, r *http.Request) {
+	user := m.App.Session.Get(r.Context(), "user").(models.Users)
+	storeid := user.Store
+
+	profile, err := m.DB.GetUserProfileInfo(storeid)
+	if err != nil {
+		m.App.ErrorLog.Println("Unable to fetch deal list info")
+	}
+	jsonData, err := json.Marshal(profile)
+	if err != nil {
+		m.App.ErrorLog.Println(err)
+		helpers.ServerError(w, err)
+		return
+	}
+
+	fmt.Fprintf(w, "%s\n", jsonData)
+}
+
+func (m *Repository) ConfigureDiscountDefaults(w http.ResponseWriter, r *http.Request) {
+	user := m.App.Session.Get(r.Context(), "user").(models.Users)
+	storeid := user.Store
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -443,14 +521,83 @@ func (m *Repository) ConfigureDiscounts(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var requestBody struct {
-		DefaultDiscount  string `json:"default_discount"`
-		DiscountCateogry string `json:"discount_category"`
+		DefaultDiscount  int8 `json:"default_discount"`
+		DiscountCateogry int8 `json:"discount_category"`
 	}
 
 	if err := json.Unmarshal(body, &requestBody); err != nil {
 		http.Error(w, "Failed to parse JSON", http.StatusBadRequest)
 		m.App.ErrorLog.Println(err)
 		return
+	}
+
+	err = m.DB.UpdateDiscountDefaults(storeid, requestBody.DefaultDiscount, requestBody.DiscountCateogry)
+	if err != nil {
+		m.App.ErrorLog.Println(err)
+		helpers.ServerError(w, err)
+		return
+	}
+
+	store, err := m.DB.GetStoreByID(storeid)
+	switch requestBody.DiscountCateogry {
+	case 1:
+		fmt.Fprintf(w, "Success\n")
+	case 2:
+		products, err := store.GetAllProducts()
+		if err != nil {
+			m.App.ErrorLog.Println("Failed to fetch products from shopify")
+			helpers.ServerError(w, err)
+		}
+		jsonData, err := json.Marshal(products)
+		if err != nil {
+			m.App.ErrorLog.Println(err)
+			helpers.ServerError(w, err)
+			return
+		}
+
+		fmt.Fprintf(w, "%s\n", jsonData)
+	case 3:
+		collections, err := store.GetAllProducts() // edit for collections
+		if err != nil {
+			m.App.ErrorLog.Println("Failed to fetch products from shopify")
+			helpers.ServerError(w, err)
+		}
+		jsonData, err := json.Marshal(collections)
+		if err != nil {
+			m.App.ErrorLog.Println(err)
+			helpers.ServerError(w, err)
+			return
+		}
+
+		fmt.Fprintf(w, "%s\n", jsonData)
+	}
+}
+
+func (m *Repository) ConfigureDiscounts(w http.ResponseWriter, r *http.Request) {
+	user := m.App.Session.Get(r.Context(), "user").(models.Users)
+	storeid := user.Store
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	var requestBody struct {
+		DiscountCateogry int8           `json:"discount_category"`
+		DisccoutMap      map[int64]int8 `json:"discount_map"`
+	}
+
+	if err := json.Unmarshal(body, &requestBody); err != nil {
+		http.Error(w, "Failed to parse JSON", http.StatusBadRequest)
+		m.App.ErrorLog.Println(err)
+		return
+	}
+
+	err = m.DB.UpdateDiscounts(storeid, requestBody.DiscountCateogry, requestBody.DisccoutMap)
+	if err != nil {
+		m.App.ErrorLog.Println("Failed to update discount values")
+		helpers.ServerError(w, err)
 	}
 }
 
@@ -480,7 +627,7 @@ func (m *Repository) ConfigureDealList(w http.ResponseWriter, r *http.Request) {
 	err = m.DB.UpdateDealListConfig(storeid, requestBody.MaxDiscount,
 		requestBody.PopupColor, requestBody.ButtonStyle, requestBody.ButtonColor)
 	if err != nil {
-		m.App.ErrorLog.Println("Deal list turn off failed!")
+		m.App.ErrorLog.Println("Deal list config update failed!")
 		helpers.ServerError(w, err)
 	}
 
@@ -489,13 +636,42 @@ func (m *Repository) ConfigureDealList(w http.ResponseWriter, r *http.Request) {
 func (m *Repository) UpdateUserProfile(w http.ResponseWriter, r *http.Request) {
 	user := m.App.Session.Get(r.Context(), "user").(models.Users)
 	storeid := user.Store
-	fmt.Println(storeid)
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	var requestBody struct {
+		FirstName string `json:"first_name"`
+		LastName  string `json:"last_name"`
+		Photo     string `json:"photo_url"`
+	}
+
+	if err := json.Unmarshal(body, &requestBody); err != nil {
+		http.Error(w, "Failed to parse JSON", http.StatusBadRequest)
+		m.App.ErrorLog.Println(err)
+		return
+	}
+
+	err = m.DB.UpdateUserProfile(storeid, requestBody.FirstName, requestBody.LastName, requestBody.Photo)
+	if err != nil {
+		m.App.ErrorLog.Println("Profile update failed!")
+		helpers.ServerError(w, err)
+	}
 }
+
+// from here
 
 func (m *Repository) UpdatePassword(w http.ResponseWriter, r *http.Request) {
 	user := m.App.Session.Get(r.Context(), "user").(models.Users)
 	storeid := user.Store
 	fmt.Println(storeid)
+}
+
+func (m *Repository) GetPageLoadInfo(w http.ResponseWriter, r *http.Request) {
+
 }
 
 func (m *Repository) GetOtfUserInfo(w http.ResponseWriter, r *http.Request) {
@@ -530,7 +706,6 @@ func (m *Repository) GetOtfUserInfo(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "Mat dikaho BC!")
 	}
 	// then we store in postgres --> this should take 2 secs max, usse zyada liya to ma chud jaegi
-
 }
 
 // if login window and func for login post method is handled
