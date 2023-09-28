@@ -9,6 +9,7 @@ import (
 type DatabaseRepo interface {
 	ToggleDealList(id int, t bool) error
 	SetTurnOffTime(id int) error
+	FetchUserByCreds(email string, pass string) (models.Users, bool, error)
 	GetCampignEndTime(id int) (time.Time, error)
 	GetAggFromCheckout(id int) (map[string][]int, error)
 	GetAggFromVisitor(id int) (map[string][]int, error)

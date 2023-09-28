@@ -43,6 +43,51 @@ func (m *postgresDBRepo) SetTurnOffTime(id int) error {
 	return nil
 }
 
+func (m *postgresDBRepo) FetchUserByCreds(email string, pass string) (models.Users, bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	var u models.Users
+	found := false
+
+	stmt := `SELECT *
+			 FROM users
+			 WHERE email = $1 AND password = $2`
+
+	rows, err := m.DB.QueryContext(ctx, stmt, email, pass)
+	if err != nil {
+		m.App.ErrorLog.Println("DB extraction failed")
+		return u, found, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var fn, ln, e, pw, ph, msc sql.NullString
+		var ca, ua sql.NullTime
+		var al, s sql.NullInt64
+
+		err := rows.Scan(&fn, &ln, &e, &pw,
+			&al, &ca, &ua, &s, &ph, &msc)
+		if err != nil {
+			m.App.ErrorLog.Println("User Assignment Failed")
+			return u, found, err
+		}
+		if s.Valid {
+			found = true
+			u.FirstName = fn.String
+			u.LastName = ln.String
+			u.Password = pw.String
+			u.AccessLevel = int(al.Int64)
+			u.CreatedAt = ca.Time
+			u.UpdatedAt = ua.Time
+			u.Store = int(s.Int64)
+			u.Photo = ph.String
+			u.Email = e.String
+			u.Misc = msc.String
+		}
+	}
+	return u, found, nil
+}
+
 func (m *postgresDBRepo) GetCampignEndTime(id int) (time.Time, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

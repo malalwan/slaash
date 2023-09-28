@@ -68,21 +68,46 @@ Output:
 (TODO)
 */
 func (m *Repository) Login(w http.ResponseWriter, r *http.Request) {
-	host := r.Host
-	oauthConf := &oauth2.Config{
-		ClientID:     m.App.MyAppCreds[0],
-		ClientSecret: m.App.MyAppCreds[1],
-		RedirectURL:  m.App.RedirectURL,
-		Scopes:       m.App.MyScopes,
-		Endpoint: oauth2.Endpoint{
-			AuthURL:  fmt.Sprintf("https://%s/admin/oauth/authorize", host),
-			TokenURL: fmt.Sprintf("https://%s/admin/oauth/access_token", host),
-		},
+	// check if already logged in
+	exists := helpers.IsAuthenticated(r)
+
+	if exists {
+		m.App.Session.RenewToken(r.Context())
+		fmt.Fprintf(w, "User already authenticated, Redirect!!")
+		return
 	}
 
-	loginURL := oauthConf.AuthCodeURL("", oauth2.AccessTypeOffline)
-	fmt.Fprintf(w, `<a href="%s">Login with Shopify</a>`, loginURL)
+	// check if the login values are correct
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
 
+	var requestBody struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+
+	if err := json.Unmarshal(body, &requestBody); err != nil {
+		http.Error(w, "Failed to parse JSON", http.StatusBadRequest)
+		m.App.ErrorLog.Println(err)
+		return
+	}
+
+	user, found, err := m.DB.FetchUserByCreds(requestBody.Email, requestBody.Password)
+	if err != nil {
+		m.App.ErrorLog.Println("User Fatch Failed!")
+		helpers.ServerError(w, err)
+		return
+	}
+	if !found {
+		helpers.ClientError(w, http.StatusUnauthorized)
+		return
+	}
+	m.App.Session.RenewToken(r.Context())
+	m.App.Session.Put(r.Context(), "user", user)
+	m.App.InfoLog.Println("User Logged in and session set")
 }
 
 func (m *Repository) ShopifyLogin(w http.ResponseWriter, r *http.Request) {
